@@ -34,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import kotlinx.serialization.json.JsonArray
@@ -149,48 +150,18 @@ private fun PaginationAction(data: JsonObject?, busy: Boolean, onLoadMore: () ->
 
 @Composable
 private fun ProfileContent(data: JsonObject?, onReload: () -> Unit) {
-    val profile = data?.get("profile")?.let { runCatching { it.jsonObject }.getOrNull() } ?: data
-    if (profile == null) {
-        Text("لم ترد بيانات الملف الصحي بعد.", Modifier.fillMaxWidth(), textAlign = TextAlign.End)
-        OutlinedButton(onClick = onReload) { Text("إعادة المحاولة") }
-        return
-    }
-    val sections = listOf("المعلومات الشخصية" to listOf("fullName", "email", "phone", "gender", "dateOfBirth", "heightCm", "timezone"), "معلومات السكري" to listOf("diabetesType", "diagnosisDate", "diagnosisYear", "monitoringMethod", "treatmentApproach"), "التفضيلات الصحية" to listOf("preferredGlucoseUnit", "numeralSystem"))
-    sections.forEach { (title, keys) ->
-        val found = keys.mapNotNull { key -> profile[key]?.jsonPrimitive?.contentOrNull?.takeIf(String::isNotBlank)?.let { key to it } }
-        if (found.isNotEmpty()) Card(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(title, Modifier.fillMaxWidth(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
-                found.forEach { (key, value) -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(value); Text(profileLabel(key), color = MaterialTheme.colorScheme.onSurfaceVariant) } }
-            }
-        }
-    }
-    val healthSections = listOf("diabetes" to "معلومات السكري", "conditions" to "الحالات الصحية", "reproductive" to "المعلومات الإنجابية", "additional" to "معلومات صحية إضافية")
-    healthSections.forEach { (key, title) ->
-        val value = data?.get(key) ?: return@forEach
-        Card(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                Text(title, Modifier.fillMaxWidth(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
-                when (value) {
-                    is JsonObject -> value.forEach { (field, item) -> Text("${profileLabel(field)}: ${runCatching { item.jsonPrimitive.content }.getOrDefault(item.toString())}", Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.End) }
-                    is JsonArray -> value.forEach { item -> Text(runCatching { item.jsonObject.entries.joinToString("، ") { (field, data) -> "${profileLabel(field)}: ${data.jsonPrimitive.content}" } }.getOrDefault(item.toString()), Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.End) }
-                    else -> Text(value.toString(), Modifier.fillMaxWidth(), textAlign = TextAlign.End)
-                }
-            }
-        }
-    }
-    Text("تُعرض الحقول التي أرجعها الخادم فقط.", Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.End)
+    HealthProfileContent(healthProfilePresentation(data), onReload)
 }
 
 @Composable
-private fun ProfileEditor(data: JsonObject?, busy: Boolean, onSave: (String, JsonObject) -> Unit) {
-    val areas = listOf("profile" to "معلومات أساسية", "diabetes" to "السكري", "conditions" to "الحالات الصحية", "reproductive" to "المعلومات الإنجابية", "additional" to "معلومات إضافية")
+internal fun ProfileEditor(data: JsonObject?, busy: Boolean, onSave: (String, JsonObject) -> Unit) {
+    val areas = listOf("profile" to "معلومات أساسية", "diabetes" to "السكري", "conditions" to "الحالات الصحية", "reproductive" to "المعلومات الإنجابية", "additional" to "معلومات إضافية", "preferences" to "التفضيلات الصحية")
     var area by remember { mutableStateOf("profile") }
     val root = data ?: JsonObject(emptyMap())
     val sectionData = when (area) {
         "diabetes" -> root["diabetes"]?.let { runCatching { it.jsonObject }.getOrNull() }
         "reproductive" -> root["reproductive"]?.let { runCatching { it.jsonObject }.getOrNull() }
-        "additional" -> root["profile"]?.let { runCatching { it.jsonObject }.getOrNull() } ?: root
+        "additional", "preferences" -> root["profile"]?.let { runCatching { it.jsonObject }.getOrNull() } ?: root
         else -> root["profile"]?.let { runCatching { it.jsonObject }.getOrNull() } ?: root
     }
     val fields = when (area) {
@@ -211,6 +182,10 @@ private fun ProfileEditor(data: JsonObject?, busy: Boolean, onSave: (String, Jso
             FieldSpec("gestationalDiabetesHistory", "تاريخ سكري الحمل", listOf("YES", "NO", "UNSURE"), defaultValue = sectionData?.get("gestationalDiabetesHistory")?.jsonPrimitive?.contentOrNull ?: "UNSURE"),
             FieldSpec("notes", "ملاحظات", required = false, defaultValue = sectionData?.get("notes")?.jsonPrimitive?.contentOrNull.orEmpty()),
         )
+        "preferences" -> listOf(
+            FieldSpec("preferredGlucoseUnit", "وحدة السكر المفضلة", listOf("MG_DL", "MMOL_L"), required = false, defaultValue = sectionData?.get("preferredGlucoseUnit")?.jsonPrimitive?.contentOrNull ?: "MG_DL"),
+            FieldSpec("numeralSystem", "نظام الأرقام", listOf("LATIN", "ARABIC_INDIC"), required = false, defaultValue = sectionData?.get("numeralSystem")?.jsonPrimitive?.contentOrNull ?: "LATIN"),
+        )
         else -> listOf(
             FieldSpec("allergies", "الحساسية", required = false, defaultValue = sectionData?.get("allergies")?.jsonPrimitive?.contentOrNull.orEmpty()),
             FieldSpec("smokingStatus", "حالة التدخين", listOf("NEVER", "CURRENT", "FORMER", "NOT_SPECIFIED"), required = false, defaultValue = sectionData?.get("smokingStatus")?.jsonPrimitive?.contentOrNull ?: "NOT_SPECIFIED"),
@@ -221,19 +196,19 @@ private fun ProfileEditor(data: JsonObject?, busy: Boolean, onSave: (String, Jso
     val values = remember(area, fields) { mutableStateMapOf<String, String>().apply { fields.forEach { put(it.key, it.defaultValue) } } }
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            areas.forEach { (key, label) -> FilterChip(selected = area == key, onClick = { area = key }, label = { Text(label) }) }
+            areas.forEach { (key, label) -> FilterChip(selected = area == key, onClick = { area = key }, label = { Text(label) }, modifier = Modifier.testTag("profile-section-$key")) }
         }
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 fields.forEach { field ->
-                    if (field.options.isNotEmpty()) ChoiceField(field, values[field.key].orEmpty(), onChange = { values[field.key] = it })
+                    if (field.options.isNotEmpty()) ChoiceField(field, values[field.key].orEmpty(), safeProfile = true, onChange = { values[field.key] = it })
                     else OutlinedTextField(values[field.key].orEmpty(), { input -> values[field.key] = if (field.numeric) input.filter { it.isDigit() } else input }, modifier = Modifier.fillMaxWidth(), label = { Text(field.label) }, singleLine = true)
                 }
                 Button(onClick = {
-                    val route = if (area == "profile") "profile" else "profile:$area"
+                    val route = if (area == "profile" || area == "preferences") "profile" else "profile:$area"
                     val body = if (area == "conditions") buildConditionsBody(values) else buildBody(fields, values)
                     onSave(route, body)
-                }, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text(if (busy) "جارٍ الحفظ…" else "حفظ التعديلات") }
+                }, enabled = !busy, modifier = Modifier.fillMaxWidth().testTag("profile-save")) { Text(if (busy) "جارٍ الحفظ…" else "حفظ التعديلات") }
             }
         }
         Text("ترسل هذه الشاشة الحقول المتوافقة مع تحقق الخادم فقط.", Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.End)
@@ -253,15 +228,30 @@ private fun conditionFields(root: JsonObject): List<FieldSpec> {
         runCatching { element.jsonObject }.getOrNull()?.let { item ->
             val type = item["conditionType"]?.jsonPrimitive?.contentOrNull
             val status = item["status"]?.jsonPrimitive?.contentOrNull
-            if (type != null && status != null) type to status else null
+            val notes = item["notes"]?.jsonPrimitive?.contentOrNull.orEmpty()
+            if (type != null && status != null) type to (status to notes) else null
         }
     }.toMap()
-    return healthConditionTypes.map { type -> FieldSpec("status:$type", "${conditionLabel(type)} — الحالة", listOf("DIAGNOSED", "NOT_DIAGNOSED", "UNKNOWN"), required = false, defaultValue = old[type].orEmpty()) }
+    val types = (healthConditionTypes + old.keys.filterNot(healthConditionTypes::contains)).distinct()
+    return types.flatMap { type ->
+        val conditionName = conditionTypeLabel(type)
+        val status = old[type]?.first ?: "UNKNOWN"
+        val notes = old[type]?.second.orEmpty()
+        listOf(
+            FieldSpec("status:$type", "$conditionName — الحالة", listOf("DIAGNOSED", "NOT_DIAGNOSED", "UNKNOWN"), required = false, defaultValue = status),
+            FieldSpec("notes:$type", "$conditionName — ملاحظات اختيارية", required = false, defaultValue = notes),
+        )
+    }
 }
 
-private fun buildConditionsBody(values: Map<String, String>): JsonObject = buildJsonObject {
-    put("conditions", JsonArray(healthConditionTypes.mapNotNull { type ->
-        values["status:$type"].orEmpty().takeIf(String::isNotBlank)?.let { status -> buildJsonObject { put("conditionType", type); put("status", status) } }
+internal fun buildConditionsBody(values: Map<String, String>): JsonObject = buildJsonObject {
+    val includedTypes = (healthConditionTypes + values.keys.mapNotNull { key -> key.removePrefix("status:").takeIf { key.startsWith("status:") } }).distinct()
+    put("conditions", JsonArray(includedTypes.map { type ->
+        buildJsonObject {
+            put("conditionType", type)
+            put("status", values["status:$type"].orEmpty().ifBlank { "UNKNOWN" })
+            values["notes:$type"]?.trim()?.takeIf(String::isNotEmpty)?.let { put("notes", it) }
+        }
     }))
 }
 
@@ -324,12 +314,20 @@ private fun RecordForm(endpoint: String, busy: Boolean, initial: JsonObject? = n
 }
 
 @Composable
-private fun ChoiceField(spec: FieldSpec, selected: String, onChange: (String) -> Unit) {
+private fun ChoiceField(spec: FieldSpec, selected: String, safeProfile: Boolean = false, onChange: (String) -> Unit) {
     var expanded by remember(spec.key) { mutableStateOf(false) }
+    val options = (spec.options + selected.takeIf { it.isNotBlank() && it !in spec.options }.orEmpty()).distinct()
+    fun label(value: String): String = if (safeProfile) {
+        val kind = when {
+            spec.key.startsWith("status:") -> "conditionStatus"
+            else -> spec.key
+        }
+        profileEnumLabel(kind, value)
+    } else enumLabel(value)
     Box(Modifier.fillMaxWidth()) {
-        OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()) { Text("${spec.label}: ${enumLabel(selected)}") }
+        OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()) { Text("${spec.label}: ${label(selected)}") }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            spec.options.forEach { option -> DropdownMenuItem(text = { Text(enumLabel(option)) }, onClick = { onChange(option); expanded = false }) }
+            options.forEach { option -> DropdownMenuItem(text = { Text(label(option)) }, onClick = { onChange(option); expanded = false }) }
         }
     }
 }
@@ -420,10 +418,6 @@ private fun emptyLabel(endpoint: String) = when (endpoint) {
 
 private fun profileLabel(key: String) = when (key) {
     "fullName" -> "الاسم"; "email" -> "البريد الإلكتروني"; "phone" -> "الهاتف"; "gender" -> "الجنس"; "dateOfBirth" -> "تاريخ الميلاد"; "heightCm" -> "الطول"; "timezone" -> "المنطقة الزمنية"; "diabetesType" -> "نوع السكري"; "diagnosisDate" -> "تاريخ التشخيص"; "diagnosisYear" -> "سنة التشخيص"; "monitoringMethod" -> "طريقة المتابعة"; "treatmentApproach" -> "أسلوب العلاج"; "preferredGlucoseUnit" -> "وحدة السكر المفضلة"; "numeralSystem" -> "نظام الأرقام"; "testType" -> "نوع التحليل"; "valueSecondary" -> "قيمة إضافية"; "referenceRange" -> "المدى المرجعي"; else -> key
-}
-
-private fun conditionLabel(value: String) = when (value) {
-    "HYPERTENSION" -> "ارتفاع ضغط الدم"; "HEART_DISEASE" -> "مرض القلب"; "KIDNEY_DISEASE" -> "مرض الكلى"; "HIGH_CHOLESTEROL" -> "ارتفاع الكوليسترول"; "RETINOPATHY" -> "اعتلال الشبكية"; "NEUROPATHY" -> "اعتلال الأعصاب"; "FOOT_PROBLEMS" -> "مشكلات القدم"; else -> "حالة أخرى"
 }
 
 private fun enumLabel(value: String) = when (value) {

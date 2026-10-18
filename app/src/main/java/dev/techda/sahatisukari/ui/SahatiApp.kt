@@ -34,8 +34,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -78,16 +76,6 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-private data class Destination(val title: String, val icon: ImageVector)
-private val destinations = listOf(
-    Destination("الرئيسية", Icons.Outlined.Home),
-    Destination("ملفي الصحي", Icons.Outlined.Person),
-    Destination("قياسات السكر", Icons.Outlined.Bloodtype),
-    Destination("أدويتي", Icons.Outlined.Medication),
-    Destination("يومياتي", Icons.Outlined.CalendarMonth),
-    Destination("التقارير", Icons.Outlined.Assessment),
-)
-
 @Composable
 fun SahatiRoot(authViewModel: AuthViewModel = hiltViewModel()) {
     val state by authViewModel.state.collectAsState()
@@ -124,16 +112,10 @@ private fun PatientApp(user: AuthUser, onLogout: () -> Unit) {
             )
         },
         bottomBar = {
-            NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-                destinations.forEachIndexed { index, destination ->
-                    NavigationBarItem(
-                        selected = selected == index && !emergency,
-                        onClick = { selected = index; emergency = false },
-                        icon = { Icon(destination.icon, contentDescription = destination.title, modifier = Modifier.size(20.dp)) },
-                        label = { Text(destination.title, maxLines = 1, style = MaterialTheme.typography.labelSmall) }
-                    )
-                }
-            }
+            SahatiBottomNavigation(
+                selectedIndex = if (emergency || settings) -1 else selected,
+                onSelect = { selected = it; emergency = false; settings = false },
+            )
         },
         containerColor = MaterialTheme.colorScheme.background,
     ) { padding ->
@@ -147,15 +129,15 @@ private fun PatientApp(user: AuthUser, onLogout: () -> Unit) {
 @Composable
 private fun DashboardScreen(user: AuthUser, modifier: Modifier = Modifier, onGlucose: () -> Unit, onReports: () -> Unit, onProfile: () -> Unit, viewModel: DashboardViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsState()
-    Column(modifier.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        Text("لوحة المتابعة الصحية", modifier = Modifier.fillMaxWidth(), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
+    Column(modifier.verticalScroll(rememberScrollState()).padding(horizontal = SahatiUiTokens.screenHorizontal, vertical = SahatiUiTokens.screenVertical), verticalArrangement = Arrangement.spacedBy(SahatiUiTokens.sectionSpacing)) {
+        Text("لوحة المتابعة الصحية", modifier = Modifier.fillMaxWidth(), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
         val profile = (state as? DashboardState.Ready)?.data?.obj("profile")
         val patientName = profile?.string("fullName") ?: user.email
         val zone = profile?.string("timezone") ?: "Asia/Baghdad"
         Text("مرحبًا $patientName — اليوم ${todayDate(zone)}", modifier = Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.End)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            Button(onClick = onGlucose) { Text("إضافة قياس سكر") }
-            OutlinedButton(onClick = onReports) { Text("التقارير") }
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+            Button(onClick = onGlucose, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 13.dp, vertical = 7.dp)) { Text("إضافة قياس سكر") }
+            OutlinedButton(onClick = onReports, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 13.dp, vertical = 7.dp)) { Text("التقارير") }
         }
         when (val current = state) {
             DashboardState.Loading -> Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(24.dp).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) { CircularProgressIndicator(); Text("جارٍ تحميل بياناتك", Modifier.padding(top = 10.dp), color = MaterialTheme.colorScheme.onSurfaceVariant) } }
@@ -177,9 +159,9 @@ private fun DashboardContent(response: JsonObject, onProfile: () -> Unit) {
     val completion = dash.obj("completion")
     val percent = completion?.int("percent")
     if (percent != null && percent < 100) {
-        Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFFEEF8F8)), shape = RoundedCornerShape(20.dp)) {
-            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp), horizontalAlignment = Alignment.End) {
-                Text("أكمل ملفك الصحي لتحصل على متابعة أدق", fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
+        Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFFEEF8F8)), shape = RoundedCornerShape(SahatiUiTokens.cardRadius)) {
+            Column(Modifier.padding(SahatiUiTokens.cardPadding), verticalArrangement = Arrangement.spacedBy(4.dp), horizontalAlignment = Alignment.End) {
+                Text("أكمل ملفك الصحي لتحصل على متابعة أدق", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
                 Text("نسبة الاكتمال الحالية ${digits(percent)}%", style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.End, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 TextButton(onClick = onProfile) { Text("إكمال الملف الصحي") }
             }
@@ -191,14 +173,14 @@ private fun DashboardContent(response: JsonObject, onProfile: () -> Unit) {
     StatCard("آخر جرعة دواء مسجّلة", dash.obj("lastAdministration")?.let { "جرعة مسجّلة" } ?: "—", if (dash.obj("lastAdministration") == null) "لا توجد جرعات مسجّلة" else "", Icons.Outlined.Medication)
     val activityMinutes = dash.string("activityMinutes") ?: "0"
     StatCard("نشاط اليوم", if (activityMinutes == "0") "—" else "$activityMinutes دقيقة", "${dash.array("todayActivities")?.size ?: 0} نشاط مسجّل", Icons.Outlined.CalendarMonth)
-    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp)) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(SahatiUiTokens.cardRadius), elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)) {
+        Column(Modifier.padding(SahatiUiTokens.cardPadding), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("اتجاه قراءات السكر (آخر 14 يومًا)", fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.End)
             TrendChart(dash)
         }
     }
-    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp)) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(SahatiUiTokens.cardRadius), elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)) {
+        Column(Modifier.padding(SahatiUiTokens.cardPadding), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("ملخص اليوم", fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.End)
             SummaryRow("الوجبات المسجّلة", dash.string("mealsToday") ?: "—")
             SummaryRow("الأعراض المسجّلة", dash.array("todaySymptoms")?.size?.toString() ?: "—")
@@ -246,12 +228,12 @@ private fun TrendChart(dashboard: JsonObject) {
 
 @Composable
 private fun StatCard(label: String, value: String, detail: String, icon: ImageVector) {
-    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.cardElevation(2.dp)) {
-        Row(Modifier.fillMaxWidth().padding(18.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
-            Icon(icon, contentDescription = null, tint = Color(0xFF4A90D9))
-            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(SahatiUiTokens.cardRadius), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.cardElevation(1.dp)) {
+        Row(Modifier.fillMaxWidth().padding(SahatiUiTokens.cardPadding), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
+            Icon(icon, contentDescription = null, tint = Color(0xFF4A90D9), modifier = Modifier.size(18.dp))
+            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(value, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 if (detail.isNotBlank()) Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.End)
             }
         }
