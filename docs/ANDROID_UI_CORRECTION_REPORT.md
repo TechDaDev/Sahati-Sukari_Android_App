@@ -23,7 +23,7 @@ Date: 2026-10-18
 
 ## Delivery
 
-- Git commit: `1793404` (`fix(android): correct RTL profile and navigation UI`).
+- Git commit: `c9259a3` (`fix(android): correct RTL profile and navigation UI`).
 - APK: `app/build/outputs/apk/debug/app-debug.apk`.
 - Credential file: `docs/credential.md` was used locally for read-only testing and is excluded from the correction commit and generated documentation artifacts.
 
