@@ -25,6 +25,7 @@ object NetworkModule {
 
     @Provides @Singleton @Named("bare")
     fun bareClient(): OkHttpClient = OkHttpClient.Builder()
+        .retryOnConnectionFailure(false)
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .writeTimeout(30, TimeUnit.SECONDS)
@@ -42,6 +43,7 @@ object NetworkModule {
     @Provides @Singleton @Named("sessionRetrofit")
     fun sessionRetrofit(json: Json, @Named("bare") bare: OkHttpClient, authenticator: SessionAuthenticator, tokenStore: TokenStore): Retrofit {
         val client = bare.newBuilder()
+            .retryOnConnectionFailure(false)
             .addInterceptor { chain ->
                 val token = kotlinx.coroutines.runBlocking { tokenStore.read() }
                 val request = if (token == null) chain.request() else chain.request().newBuilder().header("Authorization", "Bearer ${token.accessToken}").build()

@@ -3,12 +3,14 @@ package dev.techda.sahatisukari.ui
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -23,6 +25,7 @@ import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.outlined.Medication
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Sos
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -49,6 +52,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -84,9 +91,10 @@ private val destinations = listOf(
 @Composable
 fun SahatiRoot(authViewModel: AuthViewModel = hiltViewModel()) {
     val state by authViewModel.state.collectAsState()
+    var publicEmergency by rememberSaveable { mutableStateOf(false) }
     when (val current = state) {
         AuthState.Checking -> Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) { CircularProgressIndicator() }
-        AuthState.SignedOut -> LoginScreen(onLogin = authViewModel::login, viewModel = authViewModel)
+        AuthState.SignedOut -> if (publicEmergency) EmergencyHelp(Modifier.fillMaxSize(), onBack = { publicEmergency = false }) else LoginScreen(viewModel = authViewModel, onEmergency = { publicEmergency = true })
         is AuthState.SignedIn -> PatientApp(current.user, onLogout = authViewModel::logout)
     }
 }
@@ -96,6 +104,7 @@ fun SahatiRoot(authViewModel: AuthViewModel = hiltViewModel()) {
 private fun PatientApp(user: AuthUser, onLogout: () -> Unit) {
     var selected by rememberSaveable { mutableIntStateOf(0) }
     var emergency by rememberSaveable { mutableStateOf(false) }
+    var settings by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
     Scaffold(
         topBar = {
@@ -107,6 +116,7 @@ private fun PatientApp(user: AuthUser, onLogout: () -> Unit) {
                     }
                 },
                 actions = {
+                    IconButton(onClick = { settings = true; emergency = false }) { Icon(Icons.Outlined.Settings, contentDescription = "الإعدادات", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
                     IconButton(onClick = { emergency = true }) { Icon(Icons.Outlined.Sos, contentDescription = "مساعدة عاجلة", tint = MaterialTheme.colorScheme.error) }
                     IconButton(onClick = onLogout) { Icon(Icons.AutoMirrored.Outlined.Logout, contentDescription = "خروج", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
                 },
@@ -128,13 +138,14 @@ private fun PatientApp(user: AuthUser, onLogout: () -> Unit) {
         containerColor = MaterialTheme.colorScheme.background,
     ) { padding ->
         if (emergency) EmergencyHelp(Modifier.fillMaxSize().padding(padding))
-        else if (selected == 0) DashboardScreen(user, Modifier.fillMaxSize().padding(padding), onGlucose = { selected = 2 }, onReports = { selected = 5 })
-        else SectionScreen(destinations[selected].title, Modifier.fillMaxSize().padding(padding))
+        else if (settings) SettingsScreen(onBack = { settings = false }, onSignedOut = { settings = false; onLogout() }, modifier = Modifier.fillMaxSize().padding(padding))
+        else if (selected == 0) DashboardScreen(user, Modifier.fillMaxSize().padding(padding), onGlucose = { selected = 2 }, onReports = { selected = 5 }, onProfile = { selected = 1 })
+        else PatientSectionScreen(selected, Modifier.fillMaxSize().padding(padding))
     }
 }
 
 @Composable
-private fun DashboardScreen(user: AuthUser, modifier: Modifier = Modifier, onGlucose: () -> Unit, onReports: () -> Unit, viewModel: DashboardViewModel = hiltViewModel()) {
+private fun DashboardScreen(user: AuthUser, modifier: Modifier = Modifier, onGlucose: () -> Unit, onReports: () -> Unit, onProfile: () -> Unit, viewModel: DashboardViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsState()
     Column(modifier.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Text("لوحة المتابعة الصحية", modifier = Modifier.fillMaxWidth(), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
@@ -154,14 +165,14 @@ private fun DashboardScreen(user: AuthUser, modifier: Modifier = Modifier, onGlu
                     TextButton(onClick = viewModel::refresh) { Text("إعادة المحاولة") }
                 }
             }
-            is DashboardState.Ready -> DashboardContent(current.data)
+            is DashboardState.Ready -> DashboardContent(current.data, onProfile)
         }
         Text("هذه اللوحة تعرض السجلات التي أضفتها فقط. لا تقدم تشخيصًا أو توصية علاجية.", Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.End)
     }
 }
 
 @Composable
-private fun DashboardContent(response: JsonObject) {
+private fun DashboardContent(response: JsonObject, onProfile: () -> Unit) {
     val dash = response.obj("dashboard") ?: return
     val completion = dash.obj("completion")
     val percent = completion?.int("percent")
@@ -170,7 +181,7 @@ private fun DashboardContent(response: JsonObject) {
             Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp), horizontalAlignment = Alignment.End) {
                 Text("أكمل ملفك الصحي لتحصل على متابعة أدق", fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
                 Text("نسبة الاكتمال الحالية ${digits(percent)}%", style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.End, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                TextButton(onClick = {}) { Text("إكمال الملف الصحي") }
+                TextButton(onClick = onProfile) { Text("إكمال الملف الصحي") }
             }
         }
     }
@@ -183,8 +194,7 @@ private fun DashboardContent(response: JsonObject) {
     Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp)) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("اتجاه قراءات السكر (آخر 14 يومًا)", fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.End)
-            val points = dash.array("trendData")?.size ?: 0
-            Text(if (points >= 2) "تتوفر $points قراءة في المخطط." else "لا توجد بيانات كافية لعرض المخطط. يظهر المخطط بعد تسجيل قراءتين على الأقل خلال آخر 14 يومًا.", modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.End, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            TrendChart(dash)
         }
     }
     Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp)) {
@@ -195,6 +205,42 @@ private fun DashboardContent(response: JsonObject) {
             SummaryRow("الوزن الأخير", dash.array("latestWeight")?.firstOrNull()?.jsonObject?.string("weightKg")?.plus(" كغم") ?: "—")
             SummaryRow("آخر HbA1c مسجّل", dash.array("latestHba1c")?.firstOrNull()?.jsonObject?.string("value")?.plus("%") ?: "—")
         }
+    }
+}
+
+@Composable
+private fun TrendChart(dashboard: JsonObject) {
+    val points = dashboard.array("trendData").orEmpty().mapNotNull { element ->
+        val value = runCatching { element.jsonObject.string("value")?.toFloatOrNull() }.getOrNull() ?: return@mapNotNull null
+        value
+    }
+    if (points.size < 2) {
+        Text("لا توجد بيانات كافية لعرض الاتجاه. يلزم وجود قراءتين على الأقل.", Modifier.fillMaxWidth(), textAlign = TextAlign.End, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        return
+    }
+    val lineColor = MaterialTheme.colorScheme.primary
+    val gridColor = MaterialTheme.colorScheme.outlineVariant
+    Text("${points.minOrNull()} — ${points.maxOrNull()}", Modifier.fillMaxWidth(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Start)
+    Canvas(Modifier.fillMaxWidth().height(150.dp)) {
+        val horizontalInset = 8.dp.toPx()
+        val verticalInset = 8.dp.toPx()
+        val chartWidth = size.width - 2 * horizontalInset
+        val chartHeight = size.height - 2 * verticalInset
+        repeat(4) { index ->
+            val y = verticalInset + chartHeight * index / 3f
+            drawLine(gridColor, Offset(horizontalInset, y), Offset(size.width - horizontalInset, y), strokeWidth = 1.dp.toPx())
+        }
+        val min = points.minOrNull() ?: 0f
+        val max = points.maxOrNull() ?: min
+        val spread = (max - min).takeIf { it > 0f } ?: 1f
+        val path = Path()
+        points.forEachIndexed { index, value ->
+            val x = horizontalInset + chartWidth * index / (points.size - 1).toFloat()
+            val y = verticalInset + chartHeight * (1f - (value - min) / spread)
+            if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            drawCircle(lineColor, radius = 3.dp.toPx(), center = Offset(x, y))
+        }
+        drawPath(path, lineColor, style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round))
     }
 }
 
@@ -229,9 +275,10 @@ private fun SectionScreen(title: String, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun EmergencyHelp(modifier: Modifier = Modifier) {
+fun EmergencyHelp(modifier: Modifier = Modifier, onBack: (() -> Unit)? = null) {
     val context = LocalContext.current
     Column(modifier.verticalScroll(rememberScrollState()).padding(18.dp), verticalArrangement = Arrangement.spacedBy(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        if (onBack != null) TextButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) { Text("العودة إلى تسجيل الدخول") }
         Text("المساعدة العاجلة", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         Text("إذا كانت الحالة طارئة، اطلب المساعدة الطبية فورًا.", textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.error)
         Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp)) {

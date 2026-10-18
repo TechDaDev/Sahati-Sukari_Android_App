@@ -1,13 +1,16 @@
 # Android security
 
-Implemented:
+## Implemented
 
-- HTTPS API base; cleartext traffic disabled.
-- Access and refresh tokens encrypted together with AES-GCM under a non-exportable Android Keystore key.
-- Ciphertext stored in DataStore; Android backup and device-transfer backups disabled.
-- Password exists only in the login form state and request body. It is not persisted.
-- OkHttp logging interceptor is not installed. Tokens are not written to logs.
-- Refresh request uses a UUID request ID and a synchronized single-flight authenticator.
-- Emergency action uses `ACTION_DIAL`; app does not place calls automatically.
+- HTTPS-only API; cleartext traffic disabled.
+- Access and refresh tokens encrypted together with AES-GCM using a non-exportable Android Keystore key. DataStore receives ciphertext only.
+- Android cloud backup and device-transfer backup disabled. Passwords remain in transient form state and request bodies only.
+- No HTTP logging interceptor or credential logging.
+- Single-flight refresh with a fresh `X-Refresh-Request-ID`; failed refresh behavior does not log token values.
+- OkHttp transport retries disabled to reduce duplicate mutation risk.
+- Report PDFs are stored in app-private cache. A non-exported `FileProvider` grants read-only URIs only to explicit open/share intents.
+- Emergency UI uses `ACTION_DIAL`, not direct call permission.
 
-Remaining review: verify refresh error/replay behavior with MockWebServer, ensure login/session lifecycle handling is complete, and audit every future network logger and crash reporter before release. Current debug app is not release-ready.
+## Limits
+
+Debug APK uses the debug signing key and is not release-ready. No production credentials are embedded. Authenticated live API and account-session behavior still need testing against an authorized synthetic account. Review server-side validation for every API change before shipping.

@@ -38,3 +38,20 @@ data class ForgotPasswordResponse(val message: String)
 
 @Serializable
 data class ResetPasswordRequest(val resetAuthorization: String, val newPassword: String, val confirmPassword: String)
+
+@Serializable
+data class ChangePasswordRequest(val currentPassword: String, val newPassword: String, val confirmPassword: String)
+
+@Serializable
+data class RegisterRequest(
+    val fullName: String,
+    val gender: String,
+    val dateOfBirth: String,
+    val heightCm: Int,
+    val nationalId: String,
+    val email: String,
+    val phone: String,
+    val password: String,
+    val confirmPassword: String,
+    val nationalIdConsent: Boolean,
+)

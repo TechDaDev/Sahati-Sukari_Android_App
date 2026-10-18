@@ -3,6 +3,8 @@ package dev.techda.sahatisukari.data
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.decodeFromJsonElement
 import javax.inject.Inject
 import javax.inject.Named
 import javax.inject.Singleton
@@ -31,6 +33,47 @@ class AuthRepository @Inject constructor(
         if (payload.user?.role != "PATIENT") throw ApiFailure("هذا التطبيق مخصص لحسابات المرضى.")
         tokenStore.save(SessionTokens(payload.accessToken, payload.refreshToken))
         return payload.user
+    }
+
+    suspend fun register(body: RegisterRequest): Boolean {
+        val response = authApi.register(body)
+        if (!response.isSuccessful) throw ApiFailure(errorMessage(response.code(), response.errorBody()?.string()))
+        val payload = response.body()?.data ?: throw ApiFailure("تعذر قراءة استجابة الخادم.")
+        val activationRequired = payload["activationRequired"]?.jsonPrimitive?.booleanOrNull == true
+        if (activationRequired) return true
+        val tokenResponse = runCatching { json.decodeFromJsonElement<TokenResponse>(payload) }.getOrNull()
+            ?: throw ApiFailure("تم إنشاء الحساب. سجّل الدخول للمتابعة.")
+        val user = tokenResponse.user ?: throw ApiFailure("تم إنشاء الحساب. سجّل الدخول للمتابعة.")
+        if (user.role != "PATIENT") throw ApiFailure("هذا التطبيق مخصص لحسابات المرضى.")
+        tokenStore.save(SessionTokens(tokenResponse.accessToken, tokenResponse.refreshToken))
+        return false
+    }
+
+    suspend fun verifyActivation(email: String, code: String) {
+        val response = authApi.verifyActivation(OtpRequest(email, code))
+        if (!response.isSuccessful) throw ApiFailure(errorMessage(response.code(), response.errorBody()?.string()))
+    }
+
+    suspend fun resendActivation(email: String) {
+        val response = authApi.resendActivation(EmailRequest(email))
+        if (!response.isSuccessful) throw ApiFailure(errorMessage(response.code(), response.errorBody()?.string()))
+    }
+
+    suspend fun requestPasswordReset(email: String) {
+        val response = authApi.forgotPassword(EmailRequest(email))
+        if (!response.isSuccessful) throw ApiFailure(errorMessage(response.code(), response.errorBody()?.string()))
+    }
+
+    suspend fun verifyPasswordReset(email: String, code: String): String {
+        val response = authApi.verifyPasswordReset(OtpRequest(email, code))
+        if (!response.isSuccessful) throw ApiFailure(errorMessage(response.code(), response.errorBody()?.string()))
+        return response.body()?.data?.get("resetAuthorization")?.jsonPrimitive?.content
+            ?: throw ApiFailure("تعذر التحقق من الرمز.")
+    }
+
+    suspend fun completePasswordReset(authorization: String, newPassword: String, confirmPassword: String) {
+        val response = authApi.completePasswordReset(ResetPasswordRequest(authorization, newPassword, confirmPassword))
+        if (!response.isSuccessful) throw ApiFailure(errorMessage(response.code(), response.errorBody()?.string()))
     }
 
     suspend fun logout() {

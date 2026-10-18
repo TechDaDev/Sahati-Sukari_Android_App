@@ -47,4 +47,32 @@ class AuthApiContractTest {
         assertNotNull(response.body()?.data?.accessExpiresAt)
         assertEquals("PATIENT", response.body()?.data?.user?.role)
     }
+
+    @Test fun registrationUsesCurrentBackendSchema() {
+        server.enqueue(MockResponse().setResponseCode(201).setBody("""{"ok":true,"data":{"activationRequired":true}}"""))
+        kotlinx.coroutines.runBlocking {
+            api.register(RegisterRequest("Synthetic Patient", "FEMALE", "1990-01-01", 165, "SYNTHETIC-ID", "patient@example.test", "+9647000000000", "SyntheticPassword123", "SyntheticPassword123", true))
+        }
+        val request = server.takeRequest()
+        assertEquals("POST", request.method)
+        assertEquals("/api/v1/auth/register", request.path)
+        val body = Json.parseToJsonElement(request.body.readUtf8()).jsonObject
+        assertEquals("FEMALE", body["gender"]!!.jsonPrimitive.content)
+        assertEquals("SYNTHETIC-ID", body["nationalId"]!!.jsonPrimitive.content)
+        assertEquals("true", body["nationalIdConsent"]!!.jsonPrimitive.content)
+    }
+
+    @Test fun refreshSendsIdempotencyHeaderAndRecoveryUsesResetContract() {
+        server.enqueue(MockResponse().setBody("""{"ok":true,"data":{"accessToken":"new-access","refreshToken":"new-refresh","accessExpiresAt":"2026-10-18T12:00:00Z","refreshExpiresAt":"2026-11-17T12:00:00Z","user":{"id":"synthetic-id","email":"patient@example.test","role":"PATIENT"}}}"""))
+        kotlinx.coroutines.runBlocking { api.refresh(RefreshRequest("old-refresh"), "00000000-0000-4000-8000-000000000001") }
+        val request = server.takeRequest()
+        assertEquals("POST", request.method)
+        assertEquals("/api/v1/auth/refresh", request.path)
+        assertEquals("00000000-0000-4000-8000-000000000001", request.getHeader("X-Refresh-Request-ID"))
+        server.enqueue(MockResponse().setBody("""{"ok":true,"data":{"message":"If eligible, a reset code was sent."}}"""))
+        kotlinx.coroutines.runBlocking { api.forgotPassword(EmailRequest("patient@example.test")) }
+        val recovery = server.takeRequest()
+        assertEquals("/api/v1/auth/forgot-password", recovery.path)
+        assertEquals("patient@example.test", Json.parseToJsonElement(recovery.body.readUtf8()).jsonObject["email"]!!.jsonPrimitive.content)
+    }
 }
