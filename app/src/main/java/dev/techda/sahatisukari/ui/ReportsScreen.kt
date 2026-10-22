@@ -49,7 +49,7 @@ fun ReportsScreen(modifier: Modifier = Modifier, viewModel: ReportsViewModel = h
         runCatching { context.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, "application/pdf").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION).addFlags(Intent.FLAG_ACTIVITY_NO_HISTORY)) }
     }
     Column(modifier.verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("التقارير", Modifier.fillMaxWidth(), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
+        SahatiPageTitle("التقارير")
         OutlinedTextField(from, { from = it }, Modifier.fillMaxWidth(), label = { Text("من (YYYY-MM-DD)") }, singleLine = true)
         OutlinedTextField(to, { to = it }, Modifier.fillMaxWidth(), label = { Text("إلى (YYYY-MM-DD)") }, singleLine = true)
         Button(onClick = { fetched = true; viewModel.load(from, to) }, enabled = rangeValid && !state.busy, modifier = Modifier.fillMaxWidth()) { Text("عرض ملخص التقرير") }
@@ -61,9 +61,9 @@ fun ReportsScreen(modifier: Modifier = Modifier, viewModel: ReportsViewModel = h
             context.startActivity(Intent.createChooser(send, "مشاركة التقرير الصحي"))
         }, enabled = state.file != null, modifier = Modifier.fillMaxWidth()) { Text("مشاركة التقرير") }
         if (state.busy) CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally))
-        state.error?.let { Text(it, Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.error, textAlign = TextAlign.End) }
+        state.error?.let { Text(it, Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Start) }
         if (fetched && state.summary != null) JsonSummary(state.summary!!)
-        Text("يُحفظ الملف داخل مساحة التطبيق الخاصة، ولا يُشارك إلا عند اختيارك المشاركة.", Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.End)
+        Text("يُحفظ الملف داخل مساحة التطبيق الخاصة، ولا يُشارك إلا عند اختيارك المشاركة.", Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Start)
     }
 }
 
@@ -71,12 +71,12 @@ fun ReportsScreen(modifier: Modifier = Modifier, viewModel: ReportsViewModel = h
 private fun JsonSummary(summary: JsonObject) {
     val entries = flatten(summary)
     if (entries.isEmpty()) {
-        Text("لا توجد بيانات ضمن هذه الفترة.", Modifier.fillMaxWidth(), textAlign = TextAlign.End)
+        Text("لا توجد بيانات ضمن هذه الفترة.", Modifier.fillMaxWidth(), textAlign = TextAlign.Start)
         return
     }
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("ملخص الفترة", Modifier.fillMaxWidth(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
+            Text("ملخص الفترة", Modifier.fillMaxWidth(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, textAlign = TextAlign.Start)
             entries.take(30).forEach { (label, value) -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(value, fontWeight = FontWeight.SemiBold); Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant) } }
         }
     }

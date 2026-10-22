@@ -229,7 +229,7 @@ internal fun HealthProfileContent(
                     modifier = Modifier.fillMaxWidth(),
                     color = MaterialTheme.colorScheme.primary,
                 )
-                Text("${model.completionPercent}٪", modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.End, style = MaterialTheme.typography.labelMedium)
+                Text("${model.completionPercent}٪", modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Start, style = MaterialTheme.typography.labelMedium)
             }
         } else if (model.summary.isNotEmpty()) {
             SahatiProfileCard("الملخص الأساسي") { ProfileLines(model.summary) }
@@ -242,7 +242,7 @@ internal fun HealthProfileContent(
                     Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text(condition.label, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Start)
-                            Text(condition.status, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.End)
+                            Text(condition.status, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Start)
                         }
                         condition.notes?.let { Text(it, Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Start) }
                     }
@@ -297,7 +297,7 @@ private fun ProfileLines(lines: List<HealthProfileLine>) {
                 line.value,
                 modifier = Modifier.weight(1f),
                 style = MaterialTheme.typography.bodyMedium.copy(textDirection = TextDirection.ContentOrLtr),
-                textAlign = TextAlign.End,
+                textAlign = TextAlign.Start,
             )
         }
     }

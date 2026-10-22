@@ -158,11 +158,11 @@ private fun PatientApp(user: AuthUser, onLogout: () -> Unit, startupUpdate: dev.
 private fun DashboardScreen(user: AuthUser, modifier: Modifier = Modifier, onGlucose: () -> Unit, onReports: () -> Unit, onProfile: () -> Unit, viewModel: DashboardViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsState()
     Column(modifier.verticalScroll(rememberScrollState()).padding(horizontal = SahatiUiTokens.screenHorizontal, vertical = SahatiUiTokens.screenVertical), verticalArrangement = Arrangement.spacedBy(SahatiUiTokens.sectionSpacing)) {
-        Text("لوحة المتابعة الصحية", modifier = Modifier.fillMaxWidth(), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
+        Text("لوحة المتابعة الصحية", modifier = Modifier.fillMaxWidth(), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, textAlign = TextAlign.Start)
         val profile = (state as? DashboardState.Ready)?.data?.obj("profile")
         val patientName = profile?.string("fullName") ?: user.email
         val zone = profile?.string("timezone") ?: "Asia/Baghdad"
-        Text("مرحبًا $patientName — اليوم ${todayDate(zone)}", modifier = Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.End)
+        Text("مرحبًا $patientName — اليوم ${todayDate(zone)}", modifier = Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Start)
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
             Button(onClick = onGlucose, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 13.dp, vertical = 7.dp)) { Text("إضافة قياس سكر") }
             OutlinedButton(onClick = onReports, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 13.dp, vertical = 7.dp)) { Text("التقارير") }
@@ -177,7 +177,7 @@ private fun DashboardScreen(user: AuthUser, modifier: Modifier = Modifier, onGlu
             }
             is DashboardState.Ready -> DashboardContent(current.data, onProfile)
         }
-        Text("هذه اللوحة تعرض السجلات التي أضفتها فقط. لا تقدم تشخيصًا أو توصية علاجية.", Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.End)
+        Text("هذه اللوحة تعرض السجلات التي أضفتها فقط. لا تقدم تشخيصًا أو توصية علاجية.", Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Start)
     }
 }
 
@@ -189,8 +189,8 @@ private fun DashboardContent(response: JsonObject, onProfile: () -> Unit) {
     if (percent != null && percent < 100) {
         Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFFEEF8F8)), shape = RoundedCornerShape(SahatiUiTokens.cardRadius)) {
             Column(Modifier.padding(SahatiUiTokens.cardPadding), verticalArrangement = Arrangement.spacedBy(4.dp), horizontalAlignment = Alignment.End) {
-                Text("أكمل ملفك الصحي لتحصل على متابعة أدق", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
-                Text("نسبة الاكتمال الحالية ${digits(percent)}%", style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.End, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("أكمل ملفك الصحي لتحصل على متابعة أدق", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.Start)
+                Text("نسبة الاكتمال الحالية ${digits(percent)}%", style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Start, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 TextButton(onClick = onProfile) { Text("إكمال الملف الصحي") }
             }
         }
@@ -203,13 +203,13 @@ private fun DashboardContent(response: JsonObject, onProfile: () -> Unit) {
     StatCard("نشاط اليوم", if (activityMinutes == "0") "—" else "$activityMinutes دقيقة", "${dash.array("todayActivities")?.size ?: 0} نشاط مسجّل", Icons.Outlined.CalendarMonth)
     Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(SahatiUiTokens.cardRadius), elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)) {
         Column(Modifier.padding(SahatiUiTokens.cardPadding), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("اتجاه قراءات السكر (آخر 14 يومًا)", fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.End)
+            Text("اتجاه قراءات السكر (آخر 14 يومًا)", fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Start)
             TrendChart(dash)
         }
     }
     Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(SahatiUiTokens.cardRadius), elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)) {
         Column(Modifier.padding(SahatiUiTokens.cardPadding), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("ملخص اليوم", fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.End)
+            Text("ملخص اليوم", fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Start)
             SummaryRow("الوجبات المسجّلة", dash.string("mealsToday") ?: "—")
             SummaryRow("الأعراض المسجّلة", dash.array("todaySymptoms")?.size?.toString() ?: "—")
             SummaryRow("الوزن الأخير", dash.array("latestWeight")?.firstOrNull()?.jsonObject?.string("weightKg")?.plus(" كغم") ?: "—")
@@ -225,7 +225,7 @@ private fun TrendChart(dashboard: JsonObject) {
         value
     }
     if (points.size < 2) {
-        Text("لا توجد بيانات كافية لعرض الاتجاه. يلزم وجود قراءتين على الأقل.", Modifier.fillMaxWidth(), textAlign = TextAlign.End, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("لا توجد بيانات كافية لعرض الاتجاه. يلزم وجود قراءتين على الأقل.", Modifier.fillMaxWidth(), textAlign = TextAlign.Start, color = MaterialTheme.colorScheme.onSurfaceVariant)
         return
     }
     val lineColor = MaterialTheme.colorScheme.primary
@@ -262,7 +262,7 @@ private fun StatCard(label: String, value: String, detail: String, icon: ImageVe
             Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                if (detail.isNotBlank()) Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.End)
+                if (detail.isNotBlank()) Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Start)
             }
         }
     }
@@ -299,7 +299,7 @@ fun EmergencyHelp(modifier: Modifier = Modifier, onBack: (() -> Unit)? = null) {
             }
         }
         Text("لن يجري التطبيق اتصالًا تلقائيًا. زر الاتصال يفتح تطبيق الهاتف.", style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center)
-        Text("لا تراقب المنصة القراءات باستمرار، ولا ترسل تنبيهًا تلقائيًا، ولا تشخّص الأعراض أو تحسب جرعات الدواء.", style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.End)
+        Text("لا تراقب المنصة القراءات باستمرار، ولا ترسل تنبيهًا تلقائيًا، ولا تشخّص الأعراض أو تحسب جرعات الدواء.", style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Start)
     }
 }
 

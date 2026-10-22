@@ -31,6 +31,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.platform.LocalContext
 import android.content.Intent
 import android.net.Uri
@@ -55,33 +56,33 @@ fun SettingsScreen(onBack: () -> Unit, onSignedOut: () -> Unit, modifier: Modifi
     LaunchedEffect(Unit) { viewModel.loadInitial() }
     LaunchedEffect(state.signedOut) { if (state.signedOut) onSignedOut() }
     Column(modifier.verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("الإعدادات", Modifier.fillMaxWidth(), style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.End)
-        Text("تحديثات التطبيق", Modifier.fillMaxWidth(), style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.End)
-        Text("الإصدار المثبت: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})", Modifier.fillMaxWidth(), textAlign = TextAlign.End)
-        state.updateCheckedAt?.let { Text("آخر تحقق ناجح: $it", Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.End) }
+        SahatiPageTitle("الإعدادات", fontWeight = FontWeight.Normal)
+        Text("تحديثات التطبيق", Modifier.fillMaxWidth(), style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Start)
+        Text("الإصدار المثبت: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})", Modifier.fillMaxWidth(), textAlign = TextAlign.Start)
+        state.updateCheckedAt?.let { Text("آخر تحقق ناجح: $it", Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Start) }
         state.updateCheck?.let { result ->
-            Text(if (result.available) "يتوفر إصدار جديد: ${result.manifest.versionName}" else "أنت تستخدم أحدث إصدار من التطبيق.", Modifier.fillMaxWidth(), textAlign = TextAlign.End)
+            Text(if (result.available) "يتوفر إصدار جديد: ${result.manifest.versionName}" else "أنت تستخدم أحدث إصدار من التطبيق.", Modifier.fillMaxWidth(), textAlign = TextAlign.Start)
             if (result.available) Button(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(UpdateManifestValidator.APK_URL))) }, modifier = Modifier.fillMaxWidth()) { Text("تحديث الآن") }
         }
-        state.updateError?.let { Text(it, Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.error, textAlign = TextAlign.End) }
+        state.updateError?.let { Text(it, Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Start) }
         OutlinedButton(onClick = { viewModel.checkForUpdates(BuildConfig.VERSION_CODE) }, enabled = !state.updateBusy, modifier = Modifier.fillMaxWidth()) { Text(if (state.updateBusy) "جارٍ التحقق…" else "التحقق من وجود تحديث") }
         OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) { Text("العودة") }
-        state.error?.let { Text(it, Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.error, textAlign = TextAlign.End) }
-        state.notice?.let { Text(it, Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.primary, textAlign = TextAlign.End) }
-        Text("معلومات الحساب", Modifier.fillMaxWidth(), style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.End)
+        state.error?.let { Text(it, Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Start) }
+        state.notice?.let { Text(it, Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.primary, textAlign = TextAlign.Start) }
+        Text("معلومات الحساب", Modifier.fillMaxWidth(), style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Start)
         OutlinedTextField(email, { email = it }, Modifier.fillMaxWidth(), label = { Text("البريد الإلكتروني") }, singleLine = true)
         OutlinedTextField(phone, { phone = it }, Modifier.fillMaxWidth(), label = { Text("رقم الهاتف") }, singleLine = true)
         Button(onClick = { viewModel.saveContact(email, phone) }, enabled = !state.busy && (email != state.email || phone != state.phone), modifier = Modifier.fillMaxWidth()) { Text("حفظ معلومات الحساب") }
-        Text("تفضيلات العرض", Modifier.fillMaxWidth(), style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.End)
+        Text("تفضيلات العرض", Modifier.fillMaxWidth(), style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Start)
         SettingsChoice("وحدة قياس السكر", state.glucoseUnit, listOf("MG_DL", "MMOL_L"), viewModel::savePreferences, state.numerals, true)
         SettingsChoice("الأرقام", state.numerals, listOf("LATIN", "ARABIC_INDIC"), viewModel::savePreferences, state.glucoseUnit, false)
-        Text("تغيير كلمة المرور", Modifier.fillMaxWidth(), style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.End)
+        Text("تغيير كلمة المرور", Modifier.fillMaxWidth(), style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Start)
         SecretField("كلمة المرور الحالية", current) { current = it }
         SecretField("كلمة المرور الجديدة", next) { next = it }
         SecretField("تأكيد كلمة المرور الجديدة", confirm) { confirm = it }
-        Text("10 أحرف على الأقل، وحرف إنجليزي كبير وصغير ورقم.", Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.End)
+        Text("10 أحرف على الأقل، وحرف إنجليزي كبير وصغير ورقم.", Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Start)
         Button(onClick = { viewModel.changePassword(current, next, confirm) }, enabled = !state.busy && current.isNotEmpty() && next.isNotEmpty() && confirm.isNotEmpty(), modifier = Modifier.fillMaxWidth()) { Text("تحديث كلمة المرور") }
-        Text("الأجهزة النشطة", Modifier.fillMaxWidth(), style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.End)
+        Text("الأجهزة النشطة", Modifier.fillMaxWidth(), style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Start)
         SessionCards(state.sessions, onDelete = viewModel::revokeSession)
         OutlinedButton(onClick = viewModel::loadSessions, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) { Text("تحديث الجلسات") }
         Button(onClick = viewModel::logoutAll, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) { Text("تسجيل الخروج من جميع الأجهزة") }
@@ -110,7 +111,7 @@ private fun SecretField(label: String, value: String, onChange: (String) -> Unit
 private fun SessionCards(data: JsonObject?, onDelete: (String) -> Unit) {
     val array = (data?.get("sessions") ?: data?.get("items")) as? JsonArray
     if (array.isNullOrEmpty()) {
-        Text("لا توجد جلسات إضافية لعرضها.", Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.End)
+        Text("لا توجد جلسات إضافية لعرضها.", Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Start)
         return
     }
     array.forEach { item ->
@@ -118,8 +119,8 @@ private fun SessionCards(data: JsonObject?, onDelete: (String) -> Unit) {
         val id = record["id"]?.jsonPrimitive?.content ?: return@forEach
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(12.dp), horizontalAlignment = Alignment.End) {
-                Text(record["deviceLabel"]?.jsonPrimitive?.content ?: "جهاز", Modifier.fillMaxWidth(), textAlign = TextAlign.End)
-                Text(record["lastUsedAt"]?.jsonPrimitive?.content ?: "", Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.End)
+                Text(record["deviceLabel"]?.jsonPrimitive?.content ?: "جهاز", Modifier.fillMaxWidth(), textAlign = TextAlign.Start)
+                Text(record["lastUsedAt"]?.jsonPrimitive?.content ?: "", Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Start)
                 OutlinedButton(onClick = { onDelete(id) }) { Text("إنهاء الجلسة") }
             }
         }

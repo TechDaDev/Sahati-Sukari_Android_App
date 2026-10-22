@@ -90,9 +90,9 @@ private fun SectionContent(section: Int, state: PatientSectionState, modifier: M
     var profileEditing by remember(section) { mutableStateOf(false) }
     LaunchedEffect(state.notice) { if (section == 1 && state.notice == "تم الحفظ.") profileEditing = false }
     Column(modifier.verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(title, Modifier.fillMaxWidth(), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
-        state.error?.let { Text(it, Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.error, textAlign = TextAlign.End) }
-        state.notice?.let { Text(it, Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.primary, textAlign = TextAlign.End) }
+        SahatiPageTitle(title)
+        state.error?.let { Text(it, Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Start) }
+        state.notice?.let { Text(it, Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.primary, textAlign = TextAlign.Start) }
         if (state.loading) CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally))
         else if (section == 1) {
             if (profileEditing) ProfileEditor(state.data, state.busy, viewModel::save)
@@ -111,15 +111,15 @@ private fun SectionContent(section: Int, state: PatientSectionState, modifier: M
             }
         }
         else {
-            if (section == 2) Text("سجّل قراءاتك كما ظهرت على الجهاز. لا يقدم التطبيق تفسيرًا طبيًا للقراءات.", Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.End)
+            if (section == 2) Text("سجّل قراءاتك كما ظهرت على الجهاز. لا يقدم التطبيق تفسيرًا طبيًا للقراءات.", Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Start)
             Button(onClick = { adding = !adding }, modifier = Modifier.fillMaxWidth()) { Text(if (adding) "إلغاء" else if (section == 2) "إضافة قياس" else "إضافة دواء") }
             if (adding) RecordForm(endpoint, state.busy) { body -> viewModel.save(endpoint, body); adding = false }
             editing?.let { (id, record) -> RecordForm(endpoint, state.busy, record) { body -> viewModel.save(endpoint, body, id); editing = null } }
             RecordList(endpoint, state.data, onDelete = viewModel::delete, onEdit = { id, record -> editing = id to record })
             PaginationAction(state.data, state.busy, viewModel::loadMore)
             if (section == 3) {
-                Text("تسجيل الدواء لا يغيّر الجرعة الموصوفة. سجّل الجرعة الفعلية التي تناولتها فقط.", Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.End)
-                Text("سجل الجرعات", Modifier.fillMaxWidth(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
+                Text("تسجيل الدواء لا يغيّر الجرعة الموصوفة. سجّل الجرعة الفعلية التي تناولتها فقط.", Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Start)
+                Text("سجل الجرعات", Modifier.fillMaxWidth(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, textAlign = TextAlign.Start)
                 Button(onClick = { addingDose = !addingDose }, modifier = Modifier.fillMaxWidth()) { Text(if (addingDose) "إلغاء" else "تسجيل جرعة") }
                 if (addingDose) AdministrationForm(state.data, state.busy) { body -> viewModel.save("administrations", body); addingDose = false }
                 RecordList("administrations", state.relatedData, onDelete = viewModel::delete)
@@ -138,11 +138,11 @@ private fun JournalScreen(modifier: Modifier, viewModel: PatientSectionViewModel
     LaunchedEffect(endpoint) { viewModel.load(endpoint) }
     val choices = listOf("meals" to "الوجبات", "activities" to "النشاط", "sleep" to "النوم", "symptoms" to "الأعراض", "factors" to "العوامل اليومية", "weight" to "الوزن", "labs" to "التحاليل")
     Column(modifier.verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("يومياتي", Modifier.fillMaxWidth(), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
+        SahatiPageTitle("يومياتي")
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             choices.forEach { (key, title) -> FilterChip(selected = endpoint == key, onClick = { endpoint = key }, label = { Text(title) }) }
         }
-        state.error?.let { Text(it, Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.error, textAlign = TextAlign.End) }
+        state.error?.let { Text(it, Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Start) }
         if (state.loading) CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally))
         else {
             Button(onClick = { adding = !adding }, modifier = Modifier.fillMaxWidth()) { Text(if (adding) "إلغاء" else "إضافة سجل") }
@@ -183,19 +183,19 @@ private fun ProfileHistorySection(
     val records = healthHistoryPresentation(endpoint, data)
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp), horizontalAlignment = Alignment.End) {
-            Text(title, Modifier.fillMaxWidth(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
+            Text(title, Modifier.fillMaxWidth(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, textAlign = TextAlign.Start)
             OutlinedButton(onClick = { setAdding(!adding) }, modifier = Modifier.fillMaxWidth()) {
                 Text(if (adding) "إلغاء" else if (endpoint == "weight") "إضافة قياس وزن" else "إضافة تحليل")
             }
             if (adding) RecordForm(endpoint, busy) { body -> onSave(endpoint, body); setAdding(false) }
             if (loading && data == null) CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally))
-            else if (items.isEmpty()) Text(if (loading) "جارٍ تحميل السجل…" else "لا توجد سجلات لعرضها.", Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.End)
+            else if (items.isEmpty()) Text(if (loading) "جارٍ تحميل السجل…" else "لا توجد سجلات لعرضها.", Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Start)
             records.forEach { record ->
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp), horizontalAlignment = Alignment.End) {
-                        Text(record.title, Modifier.fillMaxWidth(), style = MaterialTheme.typography.titleSmall, textAlign = TextAlign.End)
+                        Text(record.title, Modifier.fillMaxWidth(), style = MaterialTheme.typography.titleSmall, textAlign = TextAlign.Start)
                         record.fields.forEach { field ->
-                            Text("${field.label}: ${field.value}", Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.End)
+                            Text("${field.label}: ${field.value}", Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Start)
                         }
                     }
                 }
@@ -266,7 +266,7 @@ internal fun ProfileEditor(data: JsonObject?, busy: Boolean, onSave: (String, Js
                 }, enabled = !busy, modifier = Modifier.fillMaxWidth().testTag("profile-save")) { Text(if (busy) "جارٍ الحفظ…" else "حفظ التعديلات") }
             }
         }
-        Text("ترسل هذه الشاشة الحقول المتوافقة مع تحقق الخادم فقط.", Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.End)
+        Text("ترسل هذه الشاشة الحقول المتوافقة مع تحقق الخادم فقط.", Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Start)
     }
 }
 
@@ -314,7 +314,7 @@ internal fun buildConditionsBody(values: Map<String, String>): JsonObject = buil
 private fun RecordList(endpoint: String, data: JsonObject?, onDelete: (String, String) -> Unit, onEdit: ((String, JsonObject) -> Unit)? = null) {
     val items = (data?.get("items") as? JsonArray).orEmpty()
     if (items.isEmpty()) {
-        Text(emptyLabel(endpoint), Modifier.fillMaxWidth().padding(vertical = 16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.End)
+        Text(emptyLabel(endpoint), Modifier.fillMaxWidth().padding(vertical = 16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Start)
         return
     }
     items.forEach { element ->
@@ -330,9 +330,9 @@ private fun RecordList(endpoint: String, data: JsonObject?, onDelete: (String, S
         )
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp), horizontalAlignment = Alignment.End) {
-                Text(recordTitle(endpoint, record), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.End)
+                Text(recordTitle(endpoint, record), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Start)
                 record.entries.filter { it.key !in setOf("id", "patientId", "createdAt", "updatedAt") && it.value !is JsonObject && it.value !is JsonArray }.take(5).forEach { (key, value) ->
-                    Text("${profileLabel(key)}: ${value.jsonPrimitive.contentOrNull ?: "—"}", Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.End)
+                    Text("${profileLabel(key)}: ${value.jsonPrimitive.contentOrNull ?: "—"}", Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Start)
                 }
                 if (id != null) {
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {

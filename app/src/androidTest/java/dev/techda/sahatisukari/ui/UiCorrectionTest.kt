@@ -11,8 +11,11 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -21,6 +24,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.toPixelMap
 import dev.techda.sahatisukari.ui.theme.SahatiTheme
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -35,6 +39,27 @@ import kotlin.math.abs
 
 class UiCorrectionTest {
     @get:Rule val composeRule = createComposeRule()
+
+    @Test fun pageTitleAlignsToRightInRtlLayout() {
+        composeRule.setContent {
+            CompositionLocalProvider(androidx.compose.ui.platform.LocalLayoutDirection provides LayoutDirection.Rtl) {
+                SahatiTheme { SahatiPageTitle("عنوان الملف") }
+            }
+        }
+
+        val pixels = composeRule.onNodeWithTag("sahati-page-title").captureToImage().toPixelMap()
+        var leftInk = 0
+        var rightInk = 0
+        for (y in 0 until pixels.height) {
+            for (x in 0 until pixels.width) {
+                val pixel = pixels[x, y]
+                if (pixel.alpha > 0.5f && pixel.red < 0.6f && pixel.green < 0.6f && pixel.blue < 0.6f) {
+                    if (x < pixels.width / 2) leftInk++ else rightInk++
+                }
+            }
+        }
+        assertTrue("Arabic title should be aligned to the physical right in RTL", rightInk > leftInk * 2)
+    }
 
     @Test fun sixNavigationItemsUseEqualWidthAndCenteredLabels() {
         val selected = mutableIntStateOf(0)

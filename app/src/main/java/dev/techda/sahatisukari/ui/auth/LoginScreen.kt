@@ -174,7 +174,7 @@ private fun ColumnScope.Input(value: String, onValue: (String) -> Unit, label: S
 
 @Composable
 private fun ColumnScope.Message(message: String, error: Boolean) {
-    Text(message, Modifier.fillMaxWidth().padding(bottom = 10.dp), color = if (error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.End)
+    Text(message, Modifier.fillMaxWidth().padding(bottom = 10.dp), color = if (error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Start)
 }
 
 @Composable

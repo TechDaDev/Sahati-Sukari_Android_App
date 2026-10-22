@@ -6,6 +6,7 @@ import dev.techda.sahatisukari.data.PatientApi
 import dev.techda.sahatisukari.data.SessionAuthenticator
 import dev.techda.sahatisukari.data.TokenStore
 import dev.techda.sahatisukari.data.UpdateRepository
+import android.util.Log
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -22,11 +23,22 @@ import java.util.concurrent.TimeUnit
 @Module
 @InstallIn(SingletonComponent::class)
 object NetworkModule {
+    private const val HTTP_STATUS_TAG = "SahatiHttpStatus"
+
     @Provides @Singleton fun updateRepository(): UpdateRepository = UpdateRepository.shared
     @Provides @Singleton fun json(): Json = Json { ignoreUnknownKeys = true; explicitNulls = false }
 
     @Provides @Singleton @Named("bare")
     fun bareClient(): OkHttpClient = OkHttpClient.Builder()
+        .apply {
+            if (BuildConfig.DEBUG) {
+                addInterceptor { chain ->
+                    val response = chain.proceed(chain.request())
+                    Log.i(HTTP_STATUS_TAG, "${response.request.method} ${response.code}")
+                    response
+                }
+            }
+        }
         .retryOnConnectionFailure(false)
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
