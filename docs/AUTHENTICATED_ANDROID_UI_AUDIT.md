@@ -59,11 +59,18 @@ Sanitized screenshots are in [`docs/screenshots/authenticated/`](screenshots/aut
 
 ## Remaining limitations and owner visual review
 
-- PDF viewing/sharing remains blocked by the report endpoint's HTTP 503 response.
+- PDF viewing/sharing remains unverified. The prior report endpoint HTTP 503 has no confirmed Railway exception yet. This continuation hardened cache validation and explicit view/share actions; see [`ANDROID_PDF_VERIFICATION.md`](ANDROID_PDF_VERIFICATION.md). No new production request was made.
 - The update-check host returns HTTP 404 for its manifest and APK.
 - The connected browser tools were unavailable, and the web lookup tool could not load the backend URL. Only a non-visual public-root HTTP 200 check was possible. I could not compare authenticated Android screens with the mobile website.
 - Please compare the sanitized Dashboard, Health Profile, Glucose, Medications, Daily Journal, Reports, Settings, and Emergency Help screenshots with the mobile website. Website visual parity remains unverified until that review.
 - No real test account write or delete was attempted; the live lists did not expose glucose or medication edit/delete controls during this session.
+
+## PDF report follow-up (2026-10-22)
+
+- Replaced the generic JSON key/value summary with a known-field Arabic presentation; identifiers and unknown/internal properties are omitted.
+- PDF downloads are validated before becoming available, held under app-private cache, and invalidated when the date range changes. Viewing and sharing require explicit patient actions.
+- Re-ran `./gradlew connectedDebugAndroidTest` on `sahati_api35_visible`: **PASS**, 6 tests, 0 failures. See [`ANDROID_PDF_VERIFICATION.md`](ANDROID_PDF_VERIFICATION.md) for the local checks and end-to-end limitations.
+- Backend diagnosis and production verification remain **BLOCKED** until the Railway runtime exception is available in this Codex session. No backend correction or deployment is claimed.
 
 ## Git
 
@@ -71,3 +78,4 @@ Sanitized screenshots are in [`docs/screenshots/authenticated/`](screenshots/aut
 - Audit implementation and evidence commit pushed to `origin/main`: `5af5502c6a0b5586b632f50f80c336455bb3bd67`.
 - This report records that pushed commit; the report update is committed separately.
 - Credential file, unsigned release staging artifacts, generated codebase-memory files, and the pre-existing `Theme.kt` edit were excluded from the commit.
+- PDF follow-up code and verification documentation: pending commit.
