@@ -68,5 +68,6 @@ Sanitized screenshots are in [`docs/screenshots/authenticated/`](screenshots/aut
 ## Git
 
 - Starting commit: `3d478b9d0d7314d43be7a1860fe9a04aeb8cf761`.
-- Final audit commit and push to `main`: recorded in the repository history after this report was created.
+- Audit implementation and evidence commit pushed to `origin/main`: `5af5502c6a0b5586b632f50f80c336455bb3bd67`.
+- This report records that pushed commit; the report update is committed separately.
 - Credential file, unsigned release staging artifacts, generated codebase-memory files, and the pre-existing `Theme.kt` edit were excluded from the commit.
