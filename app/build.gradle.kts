@@ -7,6 +7,12 @@ plugins {
     alias(libs.plugins.hilt)
 }
 
+val releaseStoreFilePath = providers.gradleProperty("ANDROID_RELEASE_STORE_FILE").orNull ?: System.getenv("ANDROID_RELEASE_STORE_FILE")
+val releaseStorePasswordValue = providers.gradleProperty("ANDROID_RELEASE_STORE_PASSWORD").orNull ?: System.getenv("ANDROID_RELEASE_STORE_PASSWORD")
+val releaseKeyAliasValue = providers.gradleProperty("ANDROID_RELEASE_KEY_ALIAS").orNull ?: System.getenv("ANDROID_RELEASE_KEY_ALIAS")
+val releaseKeyPasswordValue = providers.gradleProperty("ANDROID_RELEASE_KEY_PASSWORD").orNull ?: System.getenv("ANDROID_RELEASE_KEY_PASSWORD")
+val hasReleaseSigning = listOf(releaseStoreFilePath, releaseStorePasswordValue, releaseKeyAliasValue, releaseKeyPasswordValue).all { !it.isNullOrBlank() }
+
 android {
     namespace = "dev.techda.sahatisukari"
     compileSdk = 36
@@ -15,10 +21,24 @@ android {
         applicationId = "dev.techda.sahatisukari"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "API_BASE_URL", "\"https://sahatisukarie.up.railway.app/api/v1/\"")
+    }
+    signingConfigs {
+        if (hasReleaseSigning) create("production") {
+            storeFile = file(releaseStoreFilePath!!)
+            storePassword = releaseStorePasswordValue
+            keyAlias = releaseKeyAliasValue
+            keyPassword = releaseKeyPasswordValue
+        }
+    }
+    buildTypes {
+        getByName("release") {
+            isDebuggable = false
+            if (hasReleaseSigning) signingConfig = signingConfigs.getByName("production")
+        }
     }
     buildFeatures { compose = true; buildConfig = true }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }

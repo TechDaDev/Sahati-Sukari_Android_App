@@ -5,6 +5,7 @@ import dev.techda.sahatisukari.data.AuthApi
 import dev.techda.sahatisukari.data.PatientApi
 import dev.techda.sahatisukari.data.SessionAuthenticator
 import dev.techda.sahatisukari.data.TokenStore
+import dev.techda.sahatisukari.data.UpdateRepository
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -21,6 +22,7 @@ import java.util.concurrent.TimeUnit
 @Module
 @InstallIn(SingletonComponent::class)
 object NetworkModule {
+    @Provides @Singleton fun updateRepository(): UpdateRepository = UpdateRepository.shared
     @Provides @Singleton fun json(): Json = Json { ignoreUnknownKeys = true; explicitNulls = false }
 
     @Provides @Singleton @Named("bare")

@@ -9,6 +9,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -24,6 +26,9 @@ data class PatientSectionState(
     val data: JsonObject? = null,
     val relatedEndpoint: String = "",
     val relatedData: JsonObject? = null,
+    val profileWeights: JsonObject? = null,
+    val profileLabs: JsonObject? = null,
+    val profileHistoryLoading: Boolean = false,
     val loading: Boolean = false,
     val busy: Boolean = false,
     val error: String? = null,
@@ -56,6 +61,7 @@ class PatientSectionViewModel @Inject constructor(private val api: PatientApi, p
             _state.value = PatientSectionState(notice = notice)
             load(endpoint)
             if (endpoint == "medications") loadRelated("administrations")
+            if (endpoint == "profile") loadProfileHistory(force = true)
         }
     }
 
@@ -68,6 +74,55 @@ class PatientSectionViewModel @Inject constructor(private val api: PatientApi, p
                 response.body()?.data ?: error("تعذر قراءة البيانات.")
             }.onSuccess { _state.value = _state.value.copy(relatedEndpoint = endpoint, relatedData = it) }
                 .onFailure { _state.value = _state.value.copy(error = it.message ?: "تعذر تحميل البيانات.") }
+        }
+    }
+
+    fun loadProfileHistory(force: Boolean = false) {
+        val current = _state.value
+        if (current.profileHistoryLoading || (!force && current.profileWeights != null && current.profileLabs != null)) return
+        _state.value = current.copy(profileHistoryLoading = true)
+        viewModelScope.launch {
+            runCatching {
+                coroutineScope {
+                    suspend fun fetch(endpoint: String): JsonObject {
+                        val response = api.list(endpoint, mapOf("limit" to "50", "sort" to "desc"))
+                        if (!response.isSuccessful) fail(response.code(), response.errorBody()?.string())
+                        return response.body()?.data ?: error("تعذر قراءة البيانات.")
+                    }
+                    val weights = async { fetch("weight") }
+                    val labs = async { fetch("labs") }
+                    weights.await() to labs.await()
+                }
+            }.onSuccess { (weights, labs) ->
+                _state.value = _state.value.copy(profileWeights = weights, profileLabs = labs, profileHistoryLoading = false, error = null)
+            }.onFailure {
+                _state.value = _state.value.copy(profileHistoryLoading = false, error = "تعذر تحميل سجل الوزن والتحاليل.")
+            }
+        }
+    }
+
+    fun loadMoreProfileHistory(endpoint: String) {
+        val current = _state.value
+        val oldData = if (endpoint == "weight") current.profileWeights else current.profileLabs
+        val page = oldData?.get("pagination")?.let { runCatching { it.jsonObject }.getOrNull() } ?: return
+        val cursor = page["nextCursor"]?.jsonPrimitive?.contentOrNull ?: return
+        if (current.busy || endpoint !in setOf("weight", "labs")) return
+        _state.value = current.copy(busy = true, error = null)
+        viewModelScope.launch {
+            runCatching {
+                val response = api.list(endpoint, mapOf("limit" to "50", "sort" to "desc", "cursor" to cursor))
+                if (!response.isSuccessful) fail(response.code(), response.errorBody()?.string())
+                response.body()?.data ?: error("تعذر تحميل الصفحة التالية.")
+            }.onSuccess { next ->
+                val oldItems = (oldData?.get("items") as? JsonArray).orEmpty()
+                val newItems = (next["items"] as? JsonArray).orEmpty()
+                val merged = buildJsonObject {
+                    oldData?.forEach { (key, value) -> put(key, value) }
+                    put("items", JsonArray(oldItems + newItems))
+                    next["pagination"]?.let { put("pagination", it) }
+                }
+                _state.value = if (endpoint == "weight") current.copy(profileWeights = merged, busy = false) else current.copy(profileLabs = merged, busy = false)
+            }.onFailure { _state.value = _state.value.copy(busy = false, error = "تعذر تحميل المزيد من السجلات.") }
         }
     }
 
@@ -136,7 +191,11 @@ class PatientSectionViewModel @Inject constructor(private val api: PatientApi, p
                     else -> api.create(endpoint, requestBody)
                 }
                 if (!response.isSuccessful) fail(response.code(), response.errorBody()?.string())
-            }.onSuccess { _state.value = _state.value.copy(busy = false, notice = "تم الحفظ."); reload() }
+            }.onSuccess {
+                _state.value = _state.value.copy(busy = false, notice = "تم الحفظ.")
+                reload()
+                if (endpoint in setOf("weight", "labs")) loadProfileHistory(force = true)
+            }
                 .onFailure { _state.value = _state.value.copy(busy = false, error = it.message ?: "تعذر حفظ البيانات.") }
         }
     }

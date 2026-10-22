@@ -64,7 +64,10 @@ private val doseUnits = listOf("UNIT", "MG", "MCG", "G", "ML", "TABLET", "CAPSUL
 fun PatientSectionScreen(section: Int, modifier: Modifier = Modifier, viewModel: PatientSectionViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsState()
     val endpoint = when (section) { 2 -> "glucose"; 3 -> "medications"; else -> "profile" }
-    LaunchedEffect(endpoint) { viewModel.load(endpoint) }
+    LaunchedEffect(endpoint) {
+        viewModel.load(endpoint)
+        if (endpoint == "profile") viewModel.loadProfileHistory()
+    }
     LaunchedEffect(section) { if (section == 3) viewModel.loadRelated("administrations") }
     if (section == 4) {
         JournalScreen(modifier, viewModel)
@@ -95,7 +98,16 @@ private fun SectionContent(section: Int, state: PatientSectionState, modifier: M
             if (profileEditing) ProfileEditor(state.data, state.busy, viewModel::save)
             else {
                 Button(onClick = { profileEditing = true }, modifier = Modifier.fillMaxWidth()) { Text("تعديل الملف الصحي") }
-                ProfileContent(state.data, onReload = viewModel::reload)
+                ProfileContent(
+                    state.data,
+                    state.profileWeights,
+                    state.profileLabs,
+                    state.profileHistoryLoading,
+                    state.busy,
+                    viewModel::reload,
+                    viewModel::save,
+                    viewModel::loadMoreProfileHistory,
+                )
             }
         }
         else {
@@ -149,8 +161,51 @@ private fun PaginationAction(data: JsonObject?, busy: Boolean, onLoadMore: () ->
 }
 
 @Composable
-private fun ProfileContent(data: JsonObject?, onReload: () -> Unit) {
+private fun ProfileContent(
+    data: JsonObject?, weights: JsonObject?, labs: JsonObject?, historyLoading: Boolean, busy: Boolean,
+    onReload: () -> Unit, onSave: (String, JsonObject) -> Unit,
+    onLoadMore: (String) -> Unit,
+) {
+    var addingWeight by remember { mutableStateOf(false) }
+    var addingLab by remember { mutableStateOf(false) }
     HealthProfileContent(healthProfilePresentation(data), onReload)
+    ProfileHistorySection("سجل الوزن", "weight", weights, historyLoading, busy, addingWeight, { addingWeight = it }, onSave, onLoadMore)
+    ProfileHistorySection("التحاليل المخبرية", "labs", labs, historyLoading, busy, addingLab, { addingLab = it }, onSave, onLoadMore)
+}
+
+@Composable
+private fun ProfileHistorySection(
+    title: String, endpoint: String, data: JsonObject?, loading: Boolean, busy: Boolean,
+    adding: Boolean, setAdding: (Boolean) -> Unit, onSave: (String, JsonObject) -> Unit,
+    onLoadMore: (String) -> Unit,
+) {
+    val items = (data?.get("items") as? JsonArray).orEmpty()
+    val records = healthHistoryPresentation(endpoint, data)
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp), horizontalAlignment = Alignment.End) {
+            Text(title, Modifier.fillMaxWidth(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
+            OutlinedButton(onClick = { setAdding(!adding) }, modifier = Modifier.fillMaxWidth()) {
+                Text(if (adding) "إلغاء" else if (endpoint == "weight") "إضافة قياس وزن" else "إضافة تحليل")
+            }
+            if (adding) RecordForm(endpoint, busy) { body -> onSave(endpoint, body); setAdding(false) }
+            if (loading && data == null) CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally))
+            else if (items.isEmpty()) Text(if (loading) "جارٍ تحميل السجل…" else "لا توجد سجلات لعرضها.", Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.End)
+            records.forEach { record ->
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp), horizontalAlignment = Alignment.End) {
+                        Text(record.title, Modifier.fillMaxWidth(), style = MaterialTheme.typography.titleSmall, textAlign = TextAlign.End)
+                        record.fields.forEach { field ->
+                            Text("${field.label}: ${field.value}", Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.End)
+                        }
+                    }
+                }
+            }
+            val pagination = data?.get("pagination")?.let { runCatching { it.jsonObject }.getOrNull() }
+            if (pagination?.get("nextCursor")?.jsonPrimitive?.contentOrNull != null) {
+                OutlinedButton(onClick = { onLoadMore(endpoint) }, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("عرض المزيد") }
+            }
+        }
+    }
 }
 
 @Composable
@@ -417,7 +472,7 @@ private fun emptyLabel(endpoint: String) = when (endpoint) {
 }
 
 private fun profileLabel(key: String) = when (key) {
-    "fullName" -> "الاسم"; "email" -> "البريد الإلكتروني"; "phone" -> "الهاتف"; "gender" -> "الجنس"; "dateOfBirth" -> "تاريخ الميلاد"; "heightCm" -> "الطول"; "timezone" -> "المنطقة الزمنية"; "diabetesType" -> "نوع السكري"; "diagnosisDate" -> "تاريخ التشخيص"; "diagnosisYear" -> "سنة التشخيص"; "monitoringMethod" -> "طريقة المتابعة"; "treatmentApproach" -> "أسلوب العلاج"; "preferredGlucoseUnit" -> "وحدة السكر المفضلة"; "numeralSystem" -> "نظام الأرقام"; "testType" -> "نوع التحليل"; "valueSecondary" -> "قيمة إضافية"; "referenceRange" -> "المدى المرجعي"; else -> key
+    "fullName" -> "الاسم"; "email" -> "البريد الإلكتروني"; "phone" -> "الهاتف"; "gender" -> "الجنس"; "dateOfBirth" -> "تاريخ الميلاد"; "heightCm" -> "الطول"; "timezone" -> "المنطقة الزمنية"; "diabetesType" -> "نوع السكري"; "diagnosisDate" -> "تاريخ التشخيص"; "diagnosisYear" -> "سنة التشخيص"; "monitoringMethod" -> "طريقة المتابعة"; "treatmentApproach" -> "أسلوب العلاج"; "preferredGlucoseUnit" -> "وحدة السكر المفضلة"; "numeralSystem" -> "نظام الأرقام"; "testType" -> "نوع التحليل"; "value" -> "النتيجة"; "valueSecondary" -> "قيمة إضافية"; "unit" -> "الوحدة"; "testDate" -> "تاريخ التحليل"; "measurementDate" -> "تاريخ القياس"; "weightKg" -> "الوزن بالكيلوغرام"; "notes" -> "ملاحظات"; "referenceRange" -> "المدى المرجعي"; else -> key
 }
 
 private fun enumLabel(value: String) = when (value) {

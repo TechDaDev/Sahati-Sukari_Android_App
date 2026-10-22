@@ -27,6 +27,7 @@ import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Sos
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -45,6 +46,8 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -59,8 +62,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
 import dev.techda.sahatisukari.data.AuthUser
+import dev.techda.sahatisukari.BuildConfig
+import dev.techda.sahatisukari.data.UpdateManifestValidator
 import dev.techda.sahatisukari.ui.auth.AuthState
 import dev.techda.sahatisukari.ui.auth.AuthViewModel
 import dev.techda.sahatisukari.ui.auth.LoginScreen
@@ -80,20 +86,32 @@ import java.util.Locale
 fun SahatiRoot(authViewModel: AuthViewModel = hiltViewModel()) {
     val state by authViewModel.state.collectAsState()
     var publicEmergency by rememberSaveable { mutableStateOf(false) }
+    var startupUpdate by remember { mutableStateOf<dev.techda.sahatisukari.data.UpdateCheck?>(null) }
+    LaunchedEffect(Unit) {
+        runCatching { dev.techda.sahatisukari.data.UpdateRepository.shared.check(BuildConfig.VERSION_CODE) }
+            .onSuccess { if (it.available) startupUpdate = it }
+    }
     when (val current = state) {
         AuthState.Checking -> Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) { CircularProgressIndicator() }
         AuthState.SignedOut -> if (publicEmergency) EmergencyHelp(Modifier.fillMaxSize(), onBack = { publicEmergency = false }) else LoginScreen(viewModel = authViewModel, onEmergency = { publicEmergency = true })
-        is AuthState.SignedIn -> PatientApp(current.user, onLogout = authViewModel::logout)
+        is AuthState.SignedIn -> PatientApp(current.user, onLogout = authViewModel::logout, startupUpdate = startupUpdate)
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun PatientApp(user: AuthUser, onLogout: () -> Unit) {
+private fun PatientApp(user: AuthUser, onLogout: () -> Unit, startupUpdate: dev.techda.sahatisukari.data.UpdateCheck?, settingsViewModel: SettingsViewModel = hiltViewModel()) {
     var selected by rememberSaveable { mutableIntStateOf(0) }
     var emergency by rememberSaveable { mutableStateOf(false) }
     var settings by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
+    var updateDialog by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(startupUpdate?.manifest?.versionCode, user.id) {
+        startupUpdate?.let { result ->
+            val dismissed = context.getSharedPreferences("updates", android.content.Context.MODE_PRIVATE).getInt("later_version", 0)
+            updateDialog = dismissed != result.manifest.versionCode
+        }
+    }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -120,9 +138,19 @@ private fun PatientApp(user: AuthUser, onLogout: () -> Unit) {
         containerColor = MaterialTheme.colorScheme.background,
     ) { padding ->
         if (emergency) EmergencyHelp(Modifier.fillMaxSize().padding(padding))
-        else if (settings) SettingsScreen(onBack = { settings = false }, onSignedOut = { settings = false; onLogout() }, modifier = Modifier.fillMaxSize().padding(padding))
+        else if (settings) SettingsScreen(onBack = { settings = false }, onSignedOut = { settings = false; onLogout() }, modifier = Modifier.fillMaxSize().padding(padding), viewModel = settingsViewModel)
         else if (selected == 0) DashboardScreen(user, Modifier.fillMaxSize().padding(padding), onGlucose = { selected = 2 }, onReports = { selected = 5 }, onProfile = { selected = 1 })
         else PatientSectionScreen(selected, Modifier.fillMaxSize().padding(padding))
+    }
+    if (updateDialog && startupUpdate != null) {
+        val update = startupUpdate!!
+        AlertDialog(
+            onDismissRequest = { updateDialog = false; context.getSharedPreferences("updates", android.content.Context.MODE_PRIVATE).edit().putInt("later_version", update.manifest.versionCode).apply() },
+            title = { Text("يتوفر تحديث جديد") },
+            text = { Column { Text("يتوفر إصدار جديد من تطبيق صحتي وسكري. يمكنك تنزيله الآن للحصول على آخر التحسينات والإصلاحات."); Text("${BuildConfig.VERSION_NAME}  •  ${update.manifest.versionName}"); update.manifest.releaseNotes?.let { Text(it) } } },
+            confirmButton = { TextButton(onClick = { updateDialog = false; context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(UpdateManifestValidator.APK_URL))) }) { Text("تحديث الآن") } },
+            dismissButton = { TextButton(onClick = { updateDialog = false; context.getSharedPreferences("updates", android.content.Context.MODE_PRIVATE).edit().putInt("later_version", update.manifest.versionCode).apply() }) { Text("لاحقاً") } },
+        )
     }
 }
 

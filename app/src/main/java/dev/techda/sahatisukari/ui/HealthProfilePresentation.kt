@@ -30,6 +30,40 @@ import java.util.Locale
 import java.util.logging.Logger
 
 internal data class HealthProfileLine(val label: String, val value: String)
+internal data class HealthHistoryRecord(val title: String, val fields: List<HealthProfileLine>)
+
+internal fun healthHistoryPresentation(endpoint: String, response: JsonObject?): List<HealthHistoryRecord> {
+    if (endpoint !in setOf("weight", "labs")) return emptyList()
+    val rows = response?.get("items") as? JsonArray ?: return emptyList()
+    return rows.mapNotNull { element ->
+        val row = runCatching { element.jsonObject }.getOrNull() ?: return@mapNotNull null
+        fun value(key: String) = row[key]?.jsonPrimitive?.contentOrNull?.takeIf(String::isNotBlank)
+        val fields = buildList {
+            if (endpoint == "weight") {
+                value("weightKg")?.let { add(HealthProfileLine("الوزن", "${localizedDigits(decimal(it, 1), null)} كغم")) }
+                value("measurementDate")?.let { add(HealthProfileLine("تاريخ القياس", formatProfileDate(it, null))) }
+                value("notes")?.let { add(HealthProfileLine("ملاحظات", it)) }
+            } else {
+                value("testType")?.let { add(HealthProfileLine("نوع التحليل", labTestLabel(it))) }
+                value("value")?.let { add(HealthProfileLine("النتيجة", decimal(it, 2))) }
+                value("valueSecondary")?.let { add(HealthProfileLine("قيمة إضافية", decimal(it, 2))) }
+                value("unit")?.let { add(HealthProfileLine("الوحدة", it)) }
+                value("testDate")?.let { add(HealthProfileLine("تاريخ التحليل", formatProfileDate(it, null))) }
+                value("referenceRange")?.let { add(HealthProfileLine("المدى المرجعي", it)) }
+                value("notes")?.let { add(HealthProfileLine("ملاحظات", it)) }
+            }
+        }
+        if (fields.isEmpty()) return@mapNotNull null
+        HealthHistoryRecord(fields.first().value, fields)
+    }
+}
+
+private fun labTestLabel(code: String) = when (code) {
+    "HBA1C" -> "الهيموغلوبين السكري (HbA1c)"; "CREATININE" -> "الكرياتينين"; "EGFR" -> "معدل الترشيح الكبيبي (eGFR)";
+    "URINE_ACR" -> "نسبة الألبومين إلى الكرياتينين في البول"; "BLOOD_PRESSURE" -> "ضغط الدم"; "TOTAL_CHOLESTEROL" -> "الكوليسترول الكلي";
+    "LDL" -> "الكوليسترول الضار (LDL)"; "HDL" -> "الكوليسترول النافع (HDL)"; "TRIGLYCERIDES" -> "الدهون الثلاثية";
+    "OTHER" -> "تحليل آخر"; else -> "نوع تحليل محفوظ"
+}
 
 internal data class HealthConditionLine(
     val typeCode: String,

@@ -10,6 +10,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -30,6 +31,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.platform.LocalContext
+import android.content.Intent
+import android.net.Uri
+import dev.techda.sahatisukari.BuildConfig
+import dev.techda.sahatisukari.data.UpdateManifestValidator
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import kotlinx.serialization.json.JsonArray
@@ -40,6 +46,7 @@ import kotlinx.serialization.json.jsonPrimitive
 @Composable
 fun SettingsScreen(onBack: () -> Unit, onSignedOut: () -> Unit, modifier: Modifier = Modifier, viewModel: SettingsViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsState()
+    val context = LocalContext.current
     var current by remember { mutableStateOf("") }
     var next by remember { mutableStateOf("") }
     var confirm by remember { mutableStateOf("") }
@@ -49,6 +56,15 @@ fun SettingsScreen(onBack: () -> Unit, onSignedOut: () -> Unit, modifier: Modifi
     LaunchedEffect(state.signedOut) { if (state.signedOut) onSignedOut() }
     Column(modifier.verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("الإعدادات", Modifier.fillMaxWidth(), style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.End)
+        Text("تحديثات التطبيق", Modifier.fillMaxWidth(), style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.End)
+        Text("الإصدار المثبت: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})", Modifier.fillMaxWidth(), textAlign = TextAlign.End)
+        state.updateCheckedAt?.let { Text("آخر تحقق ناجح: $it", Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.End) }
+        state.updateCheck?.let { result ->
+            Text(if (result.available) "يتوفر إصدار جديد: ${result.manifest.versionName}" else "أنت تستخدم أحدث إصدار من التطبيق.", Modifier.fillMaxWidth(), textAlign = TextAlign.End)
+            if (result.available) Button(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(UpdateManifestValidator.APK_URL))) }, modifier = Modifier.fillMaxWidth()) { Text("تحديث الآن") }
+        }
+        state.updateError?.let { Text(it, Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.error, textAlign = TextAlign.End) }
+        OutlinedButton(onClick = { viewModel.checkForUpdates(BuildConfig.VERSION_CODE) }, enabled = !state.updateBusy, modifier = Modifier.fillMaxWidth()) { Text(if (state.updateBusy) "جارٍ التحقق…" else "التحقق من وجود تحديث") }
         OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) { Text("العودة") }
         state.error?.let { Text(it, Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.error, textAlign = TextAlign.End) }
         state.notice?.let { Text(it, Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.primary, textAlign = TextAlign.End) }
@@ -70,6 +86,7 @@ fun SettingsScreen(onBack: () -> Unit, onSignedOut: () -> Unit, modifier: Modifi
         OutlinedButton(onClick = viewModel::loadSessions, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) { Text("تحديث الجلسات") }
         Button(onClick = viewModel::logoutAll, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) { Text("تسجيل الخروج من جميع الأجهزة") }
         if (state.busy) CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally))
+        if (state.updateBusy) CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally))
     }
 }
 

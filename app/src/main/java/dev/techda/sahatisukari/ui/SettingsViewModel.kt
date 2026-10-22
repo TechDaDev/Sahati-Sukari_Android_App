@@ -8,6 +8,8 @@ import dev.techda.sahatisukari.data.ChangePasswordRequest
 import dev.techda.sahatisukari.data.PatientApi
 import dev.techda.sahatisukari.data.PatientRequestCodec
 import dev.techda.sahatisukari.data.TokenStore
+import dev.techda.sahatisukari.data.UpdateCheck
+import dev.techda.sahatisukari.data.UpdateRepository
 import javax.inject.Inject
 import javax.inject.Named
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,7 +24,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.put
 
-data class SettingsState(val sessions: JsonObject? = null, val email: String = "", val phone: String = "", val glucoseUnit: String = "MG_DL", val numerals: String = "LATIN", val busy: Boolean = false, val error: String? = null, val notice: String? = null, val signedOut: Boolean = false)
+data class SettingsState(val sessions: JsonObject? = null, val email: String = "", val phone: String = "", val glucoseUnit: String = "MG_DL", val numerals: String = "LATIN", val busy: Boolean = false, val error: String? = null, val notice: String? = null, val signedOut: Boolean = false, val updateBusy: Boolean = false, val updateError: String? = null, val updateCheckedAt: String? = null, val updateCheck: UpdateCheck? = null)
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
@@ -30,9 +32,20 @@ class SettingsViewModel @Inject constructor(
     private val patientApi: PatientApi,
     private val tokenStore: TokenStore,
     private val json: Json,
+    private val updateRepository: UpdateRepository,
 ) : ViewModel() {
     private val _state = MutableStateFlow(SettingsState())
     val state: StateFlow<SettingsState> = _state.asStateFlow()
+
+    fun checkForUpdates(installedVersionCode: Int) {
+        if (_state.value.updateBusy) return
+        _state.value = _state.value.copy(updateBusy = true, updateError = null)
+        viewModelScope.launch {
+            runCatching { updateRepository.check(installedVersionCode) }
+                .onSuccess { _state.value = _state.value.copy(updateBusy = false, updateCheck = it, updateCheckedAt = java.time.Instant.ofEpochMilli(it.checkedAtMillis).toString()) }
+                .onFailure { _state.value = _state.value.copy(updateBusy = false, updateError = "تعذر الاتصال بخدمة التحديث. حاول لاحقًا.") }
+        }
+    }
 
     fun loadInitial() = request {
         val profileResponse = patientApi.profile()
