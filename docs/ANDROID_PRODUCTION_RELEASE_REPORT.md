@@ -26,7 +26,7 @@
 | Emulator visual review | Arabic login screenshot reviewed at 360 × 800 dp with SwiftShader: `docs/screenshots/emulator-login.png`. Authenticated dashboard/profile and other navigation screens were not captured. |
 | Patient profile parity | Native profile now includes typed fields, diabetes, conditions, reproductive, additional fields, preferences, paged weight/lab history and matching add forms. Synthetic tests cover all profile history fields. Full visual parity remains unverified. |
 | Physical-device verification | Not performed. |
-| GitHub | Secret-pattern scan passed; selective commit/push remains. Existing user changes are excluded. |
+| GitHub | Secret-pattern scan passed; implementation pushed to `main` as `f7c2005`. Existing user changes are excluded. |
 
 Automated build and test outcomes are in `ANDROID_TEST_REPORT.md`. Final unit, lint, debug/release build, and connected gates passed in separate runs. One combined invocation hit an Android Lint race while release Hilt sources were generated; isolated lint passed. Do not use this report to claim production readiness, hosting success, or full visual parity.
 
