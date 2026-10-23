@@ -90,31 +90,62 @@ fun SahatiRoot(authViewModel: AuthViewModel = hiltViewModel()) {
     val context = LocalContext.current
     var publicEmergency by rememberSaveable { mutableStateOf(false) }
     var startupUpdate by remember { mutableStateOf<dev.techda.sahatisukari.data.UpdateCheck?>(null) }
+    var showUpdateDialog by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         runCatching { dev.techda.sahatisukari.data.UpdateRepository.shared.check(context) }
-            .onSuccess { if (it.available) startupUpdate = it }
+            .onSuccess {
+                if (it.available) {
+                    startupUpdate = it
+                    val dismissed = context.getSharedPreferences("updates", android.content.Context.MODE_PRIVATE)
+                        .getLong("later_version_code", 0L)
+                    showUpdateDialog = dismissed != it.availableVersionCode
+                }
+            }
     }
     when (val current = state) {
         AuthState.Checking -> Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) { CircularProgressIndicator() }
         AuthState.SignedOut -> if (publicEmergency) EmergencyHelp(Modifier.fillMaxSize(), onBack = { publicEmergency = false }) else LoginScreen(viewModel = authViewModel, onEmergency = { publicEmergency = true })
-        is AuthState.SignedIn -> PatientApp(current.user, onLogout = authViewModel::logout, startupUpdate = startupUpdate)
+        is AuthState.SignedIn -> PatientApp(current.user, onLogout = authViewModel::logout)
+    }
+    val update = startupUpdate
+    if (showUpdateDialog && update != null) {
+        AlertDialog(
+            onDismissRequest = {
+                showUpdateDialog = false
+                if (!update.required) {
+                    context.getSharedPreferences("updates", android.content.Context.MODE_PRIVATE).edit()
+                        .putLong("later_version_code", update.availableVersionCode).apply()
+                }
+            },
+            title = { Text(if (update.required) "يلزم تحديث التطبيق" else "يتوفر تحديث جديد") },
+            text = {
+                Column {
+                    Text("الإصدار المثبت: ${BuildConfig.VERSION_NAME} (${update.installedVersionCode})")
+                    Text("الإصدار المتاح: ${update.availableVersionName} (${update.availableVersionCode})")
+                    if (update.required) Text("هذا التحديث مطلوب للاستمرار في استخدام الإصدار المدعوم.")
+                    if (update.manifest.releaseNotes.isNotBlank()) Text(update.manifest.releaseNotes)
+                }
+            },
+            confirmButton = { UpdateInstallButton(update) },
+            dismissButton = {
+                TextButton(onClick = {
+                    showUpdateDialog = false
+                    if (!update.required) {
+                        context.getSharedPreferences("updates", android.content.Context.MODE_PRIVATE).edit()
+                            .putLong("later_version_code", update.availableVersionCode).apply()
+                    }
+                }) { Text("لاحقاً") }
+            },
+        )
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun PatientApp(user: AuthUser, onLogout: () -> Unit, startupUpdate: dev.techda.sahatisukari.data.UpdateCheck?, settingsViewModel: SettingsViewModel = hiltViewModel()) {
+private fun PatientApp(user: AuthUser, onLogout: () -> Unit, settingsViewModel: SettingsViewModel = hiltViewModel()) {
     var selected by rememberSaveable { mutableIntStateOf(0) }
     var emergency by rememberSaveable { mutableStateOf(false) }
     var settings by rememberSaveable { mutableStateOf(false) }
-    val context = LocalContext.current
-    var updateDialog by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(startupUpdate?.availableVersionCode, user.id) {
-        startupUpdate?.let { result ->
-            val dismissed = context.getSharedPreferences("updates", android.content.Context.MODE_PRIVATE).getLong("later_version_code", 0L)
-            updateDialog = dismissed != result.availableVersionCode
-        }
-    }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -144,22 +175,6 @@ private fun PatientApp(user: AuthUser, onLogout: () -> Unit, startupUpdate: dev.
         else if (settings) SettingsScreen(onBack = { settings = false }, onSignedOut = { settings = false; onLogout() }, modifier = Modifier.fillMaxSize().padding(padding), viewModel = settingsViewModel)
         else if (selected == 0) DashboardScreen(user, Modifier.fillMaxSize().padding(padding), onGlucose = { selected = 2 }, onReports = { selected = 5 }, onProfile = { selected = 1 })
         else PatientSectionScreen(selected, Modifier.fillMaxSize().padding(padding))
-    }
-    if (updateDialog && startupUpdate != null) {
-        val update = startupUpdate!!
-        AlertDialog(
-            onDismissRequest = { updateDialog = false; context.getSharedPreferences("updates", android.content.Context.MODE_PRIVATE).edit().putLong("later_version_code", update.availableVersionCode).apply() },
-            title = { Text("يتوفر تحديث جديد") },
-            text = {
-                Column {
-                    Text("الإصدار المثبت: ${BuildConfig.VERSION_NAME} (${update.installedVersionCode})")
-                    Text("الإصدار المتاح: ${update.availableVersionName} (${update.availableVersionCode})")
-                    Text("سيُنزل التطبيق ملف التحديث داخليًا ثم يفتح تأكيد التثبيت من Android.")
-                }
-            },
-            confirmButton = { UpdateInstallButton(update) },
-            dismissButton = { TextButton(onClick = { updateDialog = false; context.getSharedPreferences("updates", android.content.Context.MODE_PRIVATE).edit().putLong("later_version_code", update.availableVersionCode).apply() }) { Text("لاحقاً") } },
-        )
     }
 }
 

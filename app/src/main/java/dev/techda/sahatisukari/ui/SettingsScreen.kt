@@ -64,14 +64,14 @@ fun SettingsScreen(onBack: () -> Unit, onSignedOut: () -> Unit, modifier: Modifi
                 Modifier.fillMaxWidth(),
                 textAlign = TextAlign.Start,
             )
+            if (result.available && result.required) Text("هذا التحديث مطلوب للاستمرار في استخدام الإصدار المدعوم.", Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Start)
+            if (result.available && result.manifest.releaseNotes.isNotBlank()) Text(result.manifest.releaseNotes, Modifier.fillMaxWidth(), textAlign = TextAlign.Start)
             if (result.available) UpdateInstallButton(result)
         }
         state.updateError?.let { Text(it, Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Start) }
         if (state.updateBusy) {
-            Text("جارٍ تنزيل ملف الإصدار والتحقق منه…", Modifier.fillMaxWidth(), textAlign = TextAlign.Start)
-            val progress = state.updateProgress
-            if (progress == null) CircularProgressIndicator()
-            else androidx.compose.material3.LinearProgressIndicator({ progress / 100f }, Modifier.fillMaxWidth())
+            Text("جارٍ التحقق من التحديث…", Modifier.fillMaxWidth(), textAlign = TextAlign.Start)
+            CircularProgressIndicator()
             OutlinedButton(onClick = viewModel::cancelUpdateCheck, modifier = Modifier.fillMaxWidth()) { Text("إلغاء") }
         }
         OutlinedButton(onClick = { viewModel.checkForUpdates(context) }, enabled = !state.updateBusy, modifier = Modifier.fillMaxWidth()) { Text(if (state.updateBusy) "جارٍ التحقق…" else "التحقق من وجود تحديث") }

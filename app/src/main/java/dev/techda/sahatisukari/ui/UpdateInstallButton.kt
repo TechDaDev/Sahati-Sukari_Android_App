@@ -40,7 +40,7 @@ fun UpdateInstallButton(update: UpdateCheck) {
                 status = null
                 downloadJob = scope.launch {
                     try {
-                        val apk = UpdateRepository.shared.apkForInstall(context, update.availableVersionCode) { downloaded, total ->
+                        val apk = UpdateRepository.shared.apkForInstall(context, update.manifest) { downloaded, total ->
                             progress = if (total > 0L) ((downloaded * 100L) / total).toInt().coerceIn(0, 100) else -1
                         }
                         if (UpdateApkInstaller.requestInstall(context, apk, update.installedVersionCode.toInt())) {

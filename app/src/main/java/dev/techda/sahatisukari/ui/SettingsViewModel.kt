@@ -11,6 +11,7 @@ import dev.techda.sahatisukari.data.TokenStore
 import dev.techda.sahatisukari.data.UpdateCheck
 import dev.techda.sahatisukari.data.UpdateRepository
 import android.content.Context
+import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Named
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -44,10 +45,7 @@ class SettingsViewModel @Inject constructor(
         _state.value = _state.value.copy(updateBusy = true, updateProgress = null, updateError = null, updateCheck = null)
         updateJob = viewModelScope.launch {
             try {
-                val result = updateRepository.check(context.applicationContext) { downloaded, total ->
-                    val progress = if (total > 0L) ((downloaded * 100L) / total).toInt().coerceIn(0, 100) else null
-                    _state.value = _state.value.copy(updateProgress = progress)
-                }
+                val result = updateRepository.check(context.applicationContext, forceRefresh = true)
                 _state.value = _state.value.copy(
                     updateBusy = false,
                     updateProgress = null,
@@ -58,11 +56,13 @@ class SettingsViewModel @Inject constructor(
             } catch (error: kotlinx.coroutines.CancellationException) {
                 _state.value = _state.value.copy(updateBusy = false, updateProgress = null)
                 throw error
-            } catch (_: Exception) {
+            } catch (error: Exception) {
+                val message = if (error is IOException) "تعذّر الاتصال بخدمة التحديث. تحقق من اتصال الإنترنت وحاول مجدداً."
+                else error.message ?: "تعذّر التحقق من وجود تحديثات. يرجى المحاولة لاحقاً."
                 _state.value = _state.value.copy(
                     updateBusy = false,
                     updateProgress = null,
-                    updateError = "تعذّر التحقق من وجود تحديثات. يرجى المحاولة لاحقاً.",
+                    updateError = message,
                 )
             }
         }
