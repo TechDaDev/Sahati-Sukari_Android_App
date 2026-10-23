@@ -21,8 +21,8 @@ android {
         applicationId = "dev.techda.sahatisukari"
         minSdk = 26
         targetSdk = 36
-        versionCode = 7
-        versionName = "0.2.5"
+        versionCode = 8
+        versionName = "0.2.6"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "API_BASE_URL", "\"https://sahatisukarie.up.railway.app/api/v1/\"")
     }
