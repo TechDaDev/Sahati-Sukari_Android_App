@@ -33,10 +33,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.platform.LocalContext
-import android.content.Intent
-import android.net.Uri
 import dev.techda.sahatisukari.BuildConfig
-import dev.techda.sahatisukari.data.UpdateManifestValidator
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import kotlinx.serialization.json.JsonArray
@@ -61,11 +58,23 @@ fun SettingsScreen(onBack: () -> Unit, onSignedOut: () -> Unit, modifier: Modifi
         Text("الإصدار المثبت: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})", Modifier.fillMaxWidth(), textAlign = TextAlign.Start)
         state.updateCheckedAt?.let { Text("آخر تحقق ناجح: $it", Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Start) }
         state.updateCheck?.let { result ->
-            Text(if (result.available) "يتوفر إصدار جديد: ${result.manifest.versionName}" else "أنت تستخدم أحدث إصدار من التطبيق.", Modifier.fillMaxWidth(), textAlign = TextAlign.Start)
-            if (result.available) Button(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(UpdateManifestValidator.APK_URL))) }, modifier = Modifier.fillMaxWidth()) { Text("تحديث الآن") }
+            Text(
+                if (result.available) "يتوفر تحديث جديد: ${result.availableVersionName} (${result.availableVersionCode})."
+                else "أنت تستخدم أحدث إصدار من التطبيق.",
+                Modifier.fillMaxWidth(),
+                textAlign = TextAlign.Start,
+            )
+            if (result.available) UpdateInstallButton(result)
         }
         state.updateError?.let { Text(it, Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Start) }
-        OutlinedButton(onClick = { viewModel.checkForUpdates(BuildConfig.VERSION_CODE) }, enabled = !state.updateBusy, modifier = Modifier.fillMaxWidth()) { Text(if (state.updateBusy) "جارٍ التحقق…" else "التحقق من وجود تحديث") }
+        if (state.updateBusy) {
+            Text("جارٍ تنزيل ملف الإصدار والتحقق منه…", Modifier.fillMaxWidth(), textAlign = TextAlign.Start)
+            val progress = state.updateProgress
+            if (progress == null) CircularProgressIndicator()
+            else androidx.compose.material3.LinearProgressIndicator({ progress / 100f }, Modifier.fillMaxWidth())
+            OutlinedButton(onClick = viewModel::cancelUpdateCheck, modifier = Modifier.fillMaxWidth()) { Text("إلغاء") }
+        }
+        OutlinedButton(onClick = { viewModel.checkForUpdates(context) }, enabled = !state.updateBusy, modifier = Modifier.fillMaxWidth()) { Text(if (state.updateBusy) "جارٍ التحقق…" else "التحقق من وجود تحديث") }
         OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) { Text("العودة") }
         state.error?.let { Text(it, Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Start) }
         state.notice?.let { Text(it, Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.primary, textAlign = TextAlign.Start) }
@@ -87,7 +96,6 @@ fun SettingsScreen(onBack: () -> Unit, onSignedOut: () -> Unit, modifier: Modifi
         OutlinedButton(onClick = viewModel::loadSessions, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) { Text("تحديث الجلسات") }
         Button(onClick = viewModel::logoutAll, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) { Text("تسجيل الخروج من جميع الأجهزة") }
         if (state.busy) CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally))
-        if (state.updateBusy) CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally))
     }
 }
 

@@ -30,16 +30,13 @@
 
 Automated build and test outcomes are in `ANDROID_TEST_REPORT.md`. Final unit, lint, debug/release build, and connected gates passed in separate runs. One combined invocation hit an Android Lint race while release Hilt sources were generated; isolated lint passed. Do not use this report to claim production readiness, hosting success, or full visual parity.
 
-## Manual upload package
+## Current direct APK updater (2026-10-23)
 
-Do not upload current staging files. For a future approved signed release, use:
+The update-system implementation now uses the hosted APK itself to identify and validate releases. The historical manifest findings above describe the 2026-10-22 state; they are superseded by the direct APK updater. `updates.json` is neither generated nor required.
 
 - APK source: `dist/android/SahatiSukari.apk`
-- Manifest: `dist/android/updates.json`
-- Page draft: `dist/android/index.html`
-- Destination: hosting root serving `download.techda.dev` (physical document root unknown)
-- Public URLs: `https://download.techda.dev/SahatiSukari.apk` and `https://download.techda.dev/updates.json`
-- Suggested permissions: files `0644`, directories `0755`
-- Upload order: signed APK; verify HTTP 200, APK metadata, size, and SHA-256; upload `updates.json` last; verify JSON and APK URL. Add `index.html` only after reviewing existing hosting files because it would replace current directory-index behavior.
+- Destination: `https://download.techda.dev/SahatiSukari.apk`
+- The owner uploads the signed APK manually. No hosting upload was performed by this task.
+- The app uses ETag, Last-Modified, size, and content type only as cache hints; it downloads candidate APKs to private cache and validates package ID, greater versionCode, minSdk compatibility, debuggable flag, and signing identity before offering installation.
 
-Regenerate manifest and checksum from final signed APK. Keep prior signed releases backed up. Owner approval remains required before publication.
+Keep prior signed releases backed up and preserve the production signing key.

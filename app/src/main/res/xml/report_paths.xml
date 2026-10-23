@@ -1,3 +1,4 @@
 <paths>
     <cache-path name="private_reports" path="reports/" />
+    <cache-path name="private_updates" path="updates/" />
 </paths>

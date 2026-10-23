@@ -32,10 +32,10 @@ apksigner verify --verbose --print-certs app/build/outputs/apk/release/app-relea
 aapt dump badging app/build/outputs/apk/release/app-release.apk
 ```
 
-For a signed release, copy the verified APK to `dist/android/SahatiSukari.apk`, then create `SHA256SUMS.txt` and `updates.json` from that exact file. Do not upload metadata before the APK is available and verified.
+For a signed release, copy the verified APK to `dist/android/SahatiSukari.apk` and create `SHA256SUMS.txt` from that exact file. The in-app updater reads only APK metadata and contents from the fixed APK URL; it does not use an update manifest.
 
 ## Hosting
 
 The Namecheap connection available in this environment exposes DNS operations only. It has no file listing, document-root, hosting, or upload operations. Use Namecheap hosting/cPanel or another owner-authorized upload mechanism manually after the owner approves release publication. Inspect existing files before replacement.
 
-For future updates, upload the APK first, verify the public download and hash, then replace `updates.json` last. Keep the previous signed APK as a backup.
+For future updates, increment `versionCode`, build with the preserved production key, and upload only the signed APK to `https://download.techda.dev/SahatiSukari.apk`. Verify its HTTP response, package metadata, signer, size, and SHA-256. Keep the previous signed APK as a backup.

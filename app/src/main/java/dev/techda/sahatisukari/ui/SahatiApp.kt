@@ -42,6 +42,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -62,11 +63,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
 import dev.techda.sahatisukari.data.AuthUser
 import dev.techda.sahatisukari.BuildConfig
-import dev.techda.sahatisukari.data.UpdateManifestValidator
+import dev.techda.sahatisukari.ui.UpdateInstallButton
 import dev.techda.sahatisukari.ui.auth.AuthState
 import dev.techda.sahatisukari.ui.auth.AuthViewModel
 import dev.techda.sahatisukari.ui.auth.LoginScreen
@@ -85,10 +87,11 @@ import java.util.Locale
 @Composable
 fun SahatiRoot(authViewModel: AuthViewModel = hiltViewModel()) {
     val state by authViewModel.state.collectAsState()
+    val context = LocalContext.current
     var publicEmergency by rememberSaveable { mutableStateOf(false) }
     var startupUpdate by remember { mutableStateOf<dev.techda.sahatisukari.data.UpdateCheck?>(null) }
     LaunchedEffect(Unit) {
-        runCatching { dev.techda.sahatisukari.data.UpdateRepository.shared.check(BuildConfig.VERSION_CODE) }
+        runCatching { dev.techda.sahatisukari.data.UpdateRepository.shared.check(context) }
             .onSuccess { if (it.available) startupUpdate = it }
     }
     when (val current = state) {
@@ -106,10 +109,10 @@ private fun PatientApp(user: AuthUser, onLogout: () -> Unit, startupUpdate: dev.
     var settings by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
     var updateDialog by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(startupUpdate?.manifest?.versionCode, user.id) {
+    LaunchedEffect(startupUpdate?.availableVersionCode, user.id) {
         startupUpdate?.let { result ->
-            val dismissed = context.getSharedPreferences("updates", android.content.Context.MODE_PRIVATE).getInt("later_version", 0)
-            updateDialog = dismissed != result.manifest.versionCode
+            val dismissed = context.getSharedPreferences("updates", android.content.Context.MODE_PRIVATE).getLong("later_version_code", 0L)
+            updateDialog = dismissed != result.availableVersionCode
         }
     }
     Scaffold(
@@ -145,11 +148,17 @@ private fun PatientApp(user: AuthUser, onLogout: () -> Unit, startupUpdate: dev.
     if (updateDialog && startupUpdate != null) {
         val update = startupUpdate!!
         AlertDialog(
-            onDismissRequest = { updateDialog = false; context.getSharedPreferences("updates", android.content.Context.MODE_PRIVATE).edit().putInt("later_version", update.manifest.versionCode).apply() },
+            onDismissRequest = { updateDialog = false; context.getSharedPreferences("updates", android.content.Context.MODE_PRIVATE).edit().putLong("later_version_code", update.availableVersionCode).apply() },
             title = { Text("يتوفر تحديث جديد") },
-            text = { Column { Text("يتوفر إصدار جديد من تطبيق صحتي وسكري. يمكنك تنزيله الآن للحصول على آخر التحسينات والإصلاحات."); Text("${BuildConfig.VERSION_NAME}  •  ${update.manifest.versionName}"); update.manifest.releaseNotes?.let { Text(it) } } },
-            confirmButton = { TextButton(onClick = { updateDialog = false; context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(UpdateManifestValidator.APK_URL))) }) { Text("تحديث الآن") } },
-            dismissButton = { TextButton(onClick = { updateDialog = false; context.getSharedPreferences("updates", android.content.Context.MODE_PRIVATE).edit().putInt("later_version", update.manifest.versionCode).apply() }) { Text("لاحقاً") } },
+            text = {
+                Column {
+                    Text("الإصدار المثبت: ${BuildConfig.VERSION_NAME} (${update.installedVersionCode})")
+                    Text("الإصدار المتاح: ${update.availableVersionName} (${update.availableVersionCode})")
+                    Text("سيُنزل التطبيق ملف التحديث داخليًا ثم يفتح تأكيد التثبيت من Android.")
+                }
+            },
+            confirmButton = { UpdateInstallButton(update) },
+            dismissButton = { TextButton(onClick = { updateDialog = false; context.getSharedPreferences("updates", android.content.Context.MODE_PRIVATE).edit().putLong("later_version_code", update.availableVersionCode).apply() }) { Text("لاحقاً") } },
         )
     }
 }
@@ -208,12 +217,14 @@ private fun DashboardContent(response: JsonObject, onProfile: () -> Unit) {
         }
     }
     Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(SahatiUiTokens.cardRadius), elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)) {
-        Column(Modifier.padding(SahatiUiTokens.cardPadding), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("ملخص اليوم", fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Start)
-            SummaryRow("الوجبات المسجّلة", dash.string("mealsToday") ?: "—")
-            SummaryRow("الأعراض المسجّلة", dash.array("todaySymptoms")?.size?.toString() ?: "—")
-            SummaryRow("الوزن الأخير", dash.array("latestWeight")?.firstOrNull()?.jsonObject?.string("weightKg")?.plus(" كغم") ?: "—")
-            SummaryRow("آخر HbA1c مسجّل", dash.array("latestHba1c")?.firstOrNull()?.jsonObject?.string("value")?.plus("%") ?: "—")
+        CompositionLocalProvider(androidx.compose.ui.platform.LocalLayoutDirection provides LayoutDirection.Rtl) {
+            Column(Modifier.padding(SahatiUiTokens.cardPadding), verticalArrangement = Arrangement.spacedBy(8.dp), horizontalAlignment = Alignment.End) {
+                Text("ملخص اليوم", fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Start)
+                SummaryRow("الوجبات المسجّلة", dash.string("mealsToday") ?: "—")
+                SummaryRow("الأعراض المسجّلة", dash.array("todaySymptoms")?.size?.toString() ?: "—")
+                SummaryRow("الوزن الأخير", dash.array("latestWeight")?.firstOrNull()?.jsonObject?.string("weightKg")?.plus(" كغم") ?: "—")
+                SummaryRow("آخر HbA1c مسجّل", dash.array("latestHba1c")?.firstOrNull()?.jsonObject?.string("value")?.plus("%") ?: "—")
+            }
         }
     }
 }
@@ -255,11 +266,11 @@ private fun TrendChart(dashboard: JsonObject) {
 }
 
 @Composable
-private fun StatCard(label: String, value: String, detail: String, icon: ImageVector) {
+internal fun StatCard(label: String, value: String, detail: String, icon: ImageVector) {
     Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(SahatiUiTokens.cardRadius), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.cardElevation(1.dp)) {
         Row(Modifier.fillMaxWidth().padding(SahatiUiTokens.cardPadding), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
             Icon(icon, contentDescription = null, tint = Color(0xFF4A90D9), modifier = Modifier.size(18.dp))
-            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Column(Modifier.weight(1f), horizontalAlignment = Alignment.Start, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 if (detail.isNotBlank()) Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Start)

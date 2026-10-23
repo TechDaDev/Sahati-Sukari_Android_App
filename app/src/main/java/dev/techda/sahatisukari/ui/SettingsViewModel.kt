@@ -10,6 +10,7 @@ import dev.techda.sahatisukari.data.PatientRequestCodec
 import dev.techda.sahatisukari.data.TokenStore
 import dev.techda.sahatisukari.data.UpdateCheck
 import dev.techda.sahatisukari.data.UpdateRepository
+import android.content.Context
 import javax.inject.Inject
 import javax.inject.Named
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -24,7 +25,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.put
 
-data class SettingsState(val sessions: JsonObject? = null, val email: String = "", val phone: String = "", val glucoseUnit: String = "MG_DL", val numerals: String = "LATIN", val busy: Boolean = false, val error: String? = null, val notice: String? = null, val signedOut: Boolean = false, val updateBusy: Boolean = false, val updateError: String? = null, val updateCheckedAt: String? = null, val updateCheck: UpdateCheck? = null)
+data class SettingsState(val sessions: JsonObject? = null, val email: String = "", val phone: String = "", val glucoseUnit: String = "MG_DL", val numerals: String = "LATIN", val busy: Boolean = false, val error: String? = null, val notice: String? = null, val signedOut: Boolean = false, val updateBusy: Boolean = false, val updateProgress: Int? = null, val updateError: String? = null, val updateCheckedAt: String? = null, val updateCheck: UpdateCheck? = null)
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
@@ -36,16 +37,38 @@ class SettingsViewModel @Inject constructor(
 ) : ViewModel() {
     private val _state = MutableStateFlow(SettingsState())
     val state: StateFlow<SettingsState> = _state.asStateFlow()
+    private var updateJob: kotlinx.coroutines.Job? = null
 
-    fun checkForUpdates(installedVersionCode: Int) {
+    fun checkForUpdates(context: Context) {
         if (_state.value.updateBusy) return
-        _state.value = _state.value.copy(updateBusy = true, updateError = null)
-        viewModelScope.launch {
-            runCatching { updateRepository.check(installedVersionCode) }
-                .onSuccess { _state.value = _state.value.copy(updateBusy = false, updateCheck = it, updateCheckedAt = java.time.Instant.ofEpochMilli(it.checkedAtMillis).toString()) }
-                .onFailure { _state.value = _state.value.copy(updateBusy = false, updateError = "تعذر الاتصال بخدمة التحديث. حاول لاحقًا.") }
+        _state.value = _state.value.copy(updateBusy = true, updateProgress = null, updateError = null, updateCheck = null)
+        updateJob = viewModelScope.launch {
+            try {
+                val result = updateRepository.check(context.applicationContext) { downloaded, total ->
+                    val progress = if (total > 0L) ((downloaded * 100L) / total).toInt().coerceIn(0, 100) else null
+                    _state.value = _state.value.copy(updateProgress = progress)
+                }
+                _state.value = _state.value.copy(
+                    updateBusy = false,
+                    updateProgress = null,
+                    updateCheck = result,
+                    updateCheckedAt = java.time.Instant.ofEpochMilli(result.checkedAtMillis).toString(),
+                )
+                if (!result.available) _state.value = _state.value.copy(notice = "أنت تستخدم أحدث إصدار من التطبيق.")
+            } catch (error: kotlinx.coroutines.CancellationException) {
+                _state.value = _state.value.copy(updateBusy = false, updateProgress = null)
+                throw error
+            } catch (_: Exception) {
+                _state.value = _state.value.copy(
+                    updateBusy = false,
+                    updateProgress = null,
+                    updateError = "تعذّر التحقق من وجود تحديثات. يرجى المحاولة لاحقاً.",
+                )
+            }
         }
     }
+
+    fun cancelUpdateCheck() { updateJob?.cancel() }
 
     fun loadInitial() = request {
         val profileResponse = patientApi.profile()
