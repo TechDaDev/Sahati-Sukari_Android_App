@@ -88,7 +88,7 @@ internal object MedicalPresentation {
             "FOUR_TIMES_DAILY" to "أربع مرات يوميًا", "WITH_MEALS" to "مع الوجبات", "BEFORE_MEALS" to "قبل الوجبات",
             "AT_BEDTIME" to "قبل النوم", "AS_NEEDED" to "عند الحاجة", "WEEKLY" to "أسبوعيًا", "OTHER" to "تكرار آخر",
         ),
-        MedicalEnumField.MEDICATION_STATUS to mapOf("ACTIVE" to "نشط", "INACTIVE" to "متوقف"),
+        MedicalEnumField.MEDICATION_STATUS to mapOf("ACTIVE" to "نشط", "INACTIVE" to "غير نشط"),
         MedicalEnumField.ADMINISTRATION_STATUS to mapOf("TAKEN" to "تم تناولها", "MISSED" to "فاتت", "DELAYED" to "متأخرة"),
         MedicalEnumField.MEAL_TYPE to mapOf("BREAKFAST" to "الإفطار", "LUNCH" to "الغداء", "DINNER" to "العشاء", "SNACK" to "وجبة خفيفة", "OTHER" to "وجبة أخرى"),
         MedicalEnumField.ACTIVITY_INTENSITY to mapOf("LIGHT" to "خفيف", "MODERATE" to "متوسط", "VIGOROUS" to "شديد"),
@@ -179,6 +179,7 @@ internal object MedicalPresentation {
         "prescribedDose" to "الجرعة الموصوفة", "actualDose" to "الجرعة المسجلة", "doseUnit" to "وحدة الجرعة", "route" to "طريقة الاستخدام",
         "frequency" to "التكرار", "usualTime" to "الوقت المعتاد", "startDate" to "تاريخ البدء", "endDate" to "تاريخ الانتهاء",
         "prescriberName" to "اسم الواصف", "insulinFormulation" to "تركيبة الإنسولين", "status" to "الحالة", "administrationDatetime" to "تاريخ ووقت الجرعة",
+        "symptomsText" to "الأعراض", "strengthUnit" to "وحدة التركيز",
         "administrationDateTime" to "تاريخ ووقت الجرعة", "administrationDate" to "تاريخ الجرعة", "administrationTime" to "وقت الجرعة",
         "mealType" to "نوع الوجبة", "description" to "الوصف", "carbohydrateGrams" to "الكربوهيدرات", "mealDate" to "تاريخ الوجبة", "mealTime" to "وقت الوجبة",
         "activityType" to "نوع النشاط", "durationMinutes" to "المدة", "intensity" to "الشدة", "activityDate" to "تاريخ النشاط", "activityTime" to "وقت النشاط",
@@ -225,7 +226,7 @@ internal object MedicalPresentation {
     fun formatGlucose(value: String?, unit: String?, numeralSystem: String? = null): String {
         val parsed = value?.trim()?.toBigDecimalOrNull() ?: return "—"
         return when (unit) {
-            "MG_DL" -> "${formatDecimal(parsed.toPlainString(), 0, numeralSystem)} mg/dL"
+            "MG_DL" -> "${formatDecimal(parsed.toPlainString(), 2, numeralSystem)} mg/dL"
             "MMOL_L" -> "${formatDecimal(parsed.toPlainString(), 1, numeralSystem)} mmol/L"
             else -> UNKNOWN_ENUM
         }
@@ -235,7 +236,7 @@ internal object MedicalPresentation {
     fun formatGlucoseFromMgDl(value: String?, unit: String?, numeralSystem: String? = null): String {
         val parsed = value?.trim()?.toBigDecimalOrNull() ?: return "—"
         return when (unit) {
-            "MG_DL" -> "${formatDecimal(parsed.toPlainString(), 0, numeralSystem)} mg/dL"
+            "MG_DL" -> "${formatDecimal(parsed.toPlainString(), 2, numeralSystem)} mg/dL"
             "MMOL_L" -> {
                 val converted = parsed.divide(BigDecimal("18.0182"), 1, RoundingMode.HALF_UP)
                 "${formatDecimal(converted.toPlainString(), 1, numeralSystem)} mmol/L"
@@ -339,8 +340,16 @@ internal object MedicalPresentation {
     }
 
     /** Known fields get Arabic labels and typed formatting; unknown values remain visible without leaking API keys. */
-    fun presentRecordField(key: String, value: String?, timeZoneId: String? = null, numeralSystem: String? = null, glucoseUnit: String? = null): MedicalFieldPresentation? {
-        if (key in setOf("id", "patientId", "medicationId", "createdAt", "updatedAt", "deletedAt")) return null
+    fun presentRecordField(
+        key: String,
+        value: String?,
+        timeZoneId: String? = null,
+        numeralSystem: String? = null,
+        glucoseUnit: String? = null,
+        doseUnit: String? = null,
+        strengthUnit: String? = null,
+    ): MedicalFieldPresentation? {
+        if (key in setOf("id", "patientId", "medicationId", "createdAt", "updatedAt", "deletedAt", "standardizedValueMgdl")) return null
         if (key.endsWith("Id")) return null
         val raw = value?.takeIf(String::isNotBlank) ?: return null
         val label = fieldLabels[key] ?: "معلومات إضافية"
@@ -359,8 +368,9 @@ internal object MedicalPresentation {
             key == "bmi" -> formatBmi(raw, numeralSystem)
             key == "carbohydrateGrams" -> formatCarbohydrates(raw, numeralSystem)
             key == "durationMinutes" -> formatActivityDuration(raw, numeralSystem)
-            key == "prescribedDose" || key == "actualDose" -> formatLabValue(raw, numeralSystem)
-            key == "value" || key == "valueSecondary" || key == "strength" -> formatLabValue(raw, numeralSystem)
+            key == "prescribedDose" || key == "actualDose" -> formatMedicationDose(raw, doseUnit, numeralSystem)
+            key == "strength" -> formatMedicationDose(raw, strengthUnit, numeralSystem)
+            key == "value" || key == "valueSecondary" -> formatLabValue(raw, numeralSystem)
             key == "age" || key == "heightCm" || key == "diagnosisYear" || key == "minutesAfterMeal" -> localizedDigits(raw, numeralSystem)
             key in setOf("emailVerified", "phoneVerified") -> if (raw == "true") "تم التحقق" else "لم يتم التحقق"
             isEnumCode(raw) -> UNKNOWN_ENUM
@@ -378,7 +388,7 @@ internal object MedicalPresentation {
         "measurementContext" -> MedicalEnumField.MEASUREMENT_CONTEXT
         "source" -> MedicalEnumField.GLUCOSE_SOURCE
         "category" -> MedicalEnumField.MEDICATION_CATEGORY
-        "doseUnit" -> MedicalEnumField.DOSE_UNIT
+        "doseUnit", "strengthUnit" -> MedicalEnumField.DOSE_UNIT
         "route" -> MedicalEnumField.ADMINISTRATION_ROUTE
         "frequency" -> MedicalEnumField.MEDICATION_FREQUENCY
         "mealType" -> MedicalEnumField.MEAL_TYPE

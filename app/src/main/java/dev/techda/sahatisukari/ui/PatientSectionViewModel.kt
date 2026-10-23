@@ -24,6 +24,8 @@ import javax.inject.Inject
 data class PatientSectionState(
     val endpoint: String = "",
     val data: JsonObject? = null,
+    val patientTimezone: String? = null,
+    val numeralSystem: String? = null,
     val relatedEndpoint: String = "",
     val relatedData: JsonObject? = null,
     val profileWeights: JsonObject? = null,
@@ -48,8 +50,14 @@ class PatientSectionViewModel @Inject constructor(private val api: PatientApi, p
             runCatching {
                 val response = if (endpoint == "profile") api.profile() else api.list(endpoint, mapOf("limit" to "50", "sort" to "desc"))
                 if (!response.isSuccessful) fail(response.code(), response.errorBody()?.string())
-                response.body()?.data ?: error("تعذر قراءة البيانات.")
-            }.onSuccess { _state.value = _state.value.copy(endpoint = endpoint, data = it, loading = false, error = null, notice = notice) }
+                val data = response.body()?.data ?: error("تعذر قراءة البيانات.")
+                val profile = if (endpoint == "profile") data else runCatching {
+                    val profileResponse = api.profile()
+                    if (profileResponse.isSuccessful) profileResponse.body()?.data else null
+                }.getOrNull()
+                val preferences = profile?.get("profile")?.let { runCatching { it.jsonObject }.getOrNull() } ?: profile
+                Triple(data, preferences?.get("timezone")?.jsonPrimitive?.contentOrNull, preferences?.get("numeralSystem")?.jsonPrimitive?.contentOrNull)
+            }.onSuccess { (data, timezone, numeralSystem) -> _state.value = _state.value.copy(endpoint = endpoint, data = data, patientTimezone = timezone, numeralSystem = numeralSystem, loading = false, error = null, notice = notice) }
                 .onFailure { _state.value = _state.value.copy(endpoint = endpoint, loading = false, error = it.message ?: "تعذر تحميل البيانات.", notice = notice) }
         }
     }

@@ -22,6 +22,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -33,8 +34,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import kotlinx.serialization.json.JsonArray
@@ -44,9 +48,14 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.put
 import java.time.LocalDate
 import java.time.LocalTime
+import java.time.Instant
+import java.time.OffsetDateTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 private data class FieldSpec(
     val key: String,
@@ -113,16 +122,16 @@ private fun SectionContent(section: Int, state: PatientSectionState, modifier: M
         else {
             if (section == 2) Text("سجّل قراءاتك كما ظهرت على الجهاز. لا يقدم التطبيق تفسيرًا طبيًا للقراءات.", Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Start)
             Button(onClick = { adding = !adding }, modifier = Modifier.fillMaxWidth()) { Text(if (adding) "إلغاء" else if (section == 2) "إضافة قياس" else "إضافة دواء") }
-            if (adding) RecordForm(endpoint, state.busy) { body -> viewModel.save(endpoint, body); adding = false }
-            editing?.let { (id, record) -> RecordForm(endpoint, state.busy, record) { body -> viewModel.save(endpoint, body, id); editing = null } }
-            RecordList(endpoint, state.data, onDelete = viewModel::delete, onEdit = { id, record -> editing = id to record })
+            if (adding) RecordForm(endpoint, state.busy, timeZoneId = state.patientTimezone) { body -> viewModel.save(endpoint, body); adding = false }
+            editing?.let { (id, record) -> RecordForm(endpoint, state.busy, record, state.patientTimezone) { body -> viewModel.save(endpoint, body, id); editing = null } }
+            RecordList(endpoint, state.data, onDelete = viewModel::delete, onEdit = { id, record -> editing = id to record }, timeZoneId = state.patientTimezone, numeralSystem = state.numeralSystem)
             PaginationAction(state.data, state.busy, viewModel::loadMore)
             if (section == 3) {
                 Text("تسجيل الدواء لا يغيّر الجرعة الموصوفة. سجّل الجرعة الفعلية التي تناولتها فقط.", Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Start)
                 Text("سجل الجرعات", Modifier.fillMaxWidth(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, textAlign = TextAlign.Start)
                 Button(onClick = { addingDose = !addingDose }, modifier = Modifier.fillMaxWidth()) { Text(if (addingDose) "إلغاء" else "تسجيل جرعة") }
                 if (addingDose) AdministrationForm(state.data, state.busy) { body -> viewModel.save("administrations", body); addingDose = false }
-                RecordList("administrations", state.relatedData, onDelete = viewModel::delete)
+                RecordList("administrations", state.relatedData, onDelete = viewModel::delete, timeZoneId = state.patientTimezone, numeralSystem = state.numeralSystem)
                 PaginationAction(state.relatedData, state.busy, viewModel::loadRelatedMore)
             }
         }
@@ -311,7 +320,14 @@ internal fun buildConditionsBody(values: Map<String, String>): JsonObject = buil
 }
 
 @Composable
-private fun RecordList(endpoint: String, data: JsonObject?, onDelete: (String, String) -> Unit, onEdit: ((String, JsonObject) -> Unit)? = null) {
+private fun RecordList(
+    endpoint: String,
+    data: JsonObject?,
+    onDelete: (String, String) -> Unit,
+    onEdit: ((String, JsonObject) -> Unit)? = null,
+    timeZoneId: String? = null,
+    numeralSystem: String? = null,
+) {
     val items = (data?.get("items") as? JsonArray).orEmpty()
     if (items.isEmpty()) {
         Text(emptyLabel(endpoint), Modifier.fillMaxWidth().padding(vertical = 16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Start)
@@ -319,7 +335,9 @@ private fun RecordList(endpoint: String, data: JsonObject?, onDelete: (String, S
     }
     items.forEach { element ->
         val record = runCatching { element.jsonObject }.getOrNull() ?: return@forEach
-        val id = record["id"]?.jsonPrimitive?.contentOrNull
+        val id = if (endpoint == "administrations") {
+            record["administration"]?.let { runCatching { it.jsonObject["id"]?.jsonPrimitive?.contentOrNull }.getOrNull() }
+        } else record["id"]?.jsonPrimitive?.contentOrNull
         var confirmDelete by remember(id) { mutableStateOf(false) }
         if (confirmDelete && id != null) AlertDialog(
             onDismissRequest = { confirmDelete = false },
@@ -330,25 +348,15 @@ private fun RecordList(endpoint: String, data: JsonObject?, onDelete: (String, S
         )
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp), horizontalAlignment = Alignment.End) {
-                Text(recordTitle(endpoint, record), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Start)
-                record.entries.asSequence()
-                    .filter { it.value !is JsonObject && it.value !is JsonArray }
-                    .mapNotNull { (key, value) ->
-                        MedicalPresentation.presentRecordField(
-                            key,
-                            value.jsonPrimitive.contentOrNull,
-                            glucoseUnit = record["glucoseUnit"]?.jsonPrimitive?.contentOrNull,
-                        )
-                    }
-                    .take(5)
-                    .forEach { field ->
+                MedicalValueText(recordTitle(endpoint, record), style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
+                recordPresentationFields(endpoint, record, timeZoneId, numeralSystem).forEach { field ->
                         MedicalLabelValueRow(
                             label = field.label,
                             value = field.value,
                             labelStyle = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
                             valueStyle = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
                         )
-                    }
+                }
                 if (id != null) {
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         if (onEdit != null && endpoint in setOf("glucose", "medications")) OutlinedButton(onClick = { onEdit(id, record) }) { Text("تعديل") }
@@ -361,22 +369,31 @@ private fun RecordList(endpoint: String, data: JsonObject?, onDelete: (String, S
 }
 
 @Composable
-private fun RecordForm(endpoint: String, busy: Boolean, initial: JsonObject? = null, onSave: (JsonObject) -> Unit) {
-    val specs = fieldsFor(endpoint)
+private fun RecordForm(endpoint: String, busy: Boolean, initial: JsonObject? = null, timeZoneId: String? = null, onSave: (JsonObject) -> Unit) {
+    val specs = fieldsFor(endpoint, timeZoneId)
     val values = remember(endpoint, initial) { mutableStateMapOf<String, String>().apply { specs.forEach { spec ->
-        val current = initial?.get(spec.key)?.jsonPrimitive?.contentOrNull
-        put(spec.key, current ?: spec.defaultValue)
+        put(spec.key, recordFormInitialValue(spec.key, initial, spec.defaultValue, timeZoneId))
     } } }
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
             specs.forEach { spec ->
                 if (spec.options.isNotEmpty()) ChoiceField(spec, values[spec.key] ?: spec.defaultValue, onChange = { values[spec.key] = it })
-                else OutlinedTextField(
-                    value = values[spec.key].orEmpty(), onValueChange = { value -> values[spec.key] = if (spec.numeric) value.filter { it.isDigit() || it == '.' } else value },
-                    label = { Text(spec.label) }, modifier = Modifier.fillMaxWidth(), singleLine = true,
-                )
+                else {
+                    val value = values[spec.key].orEmpty()
+                    val invalidNumber = spec.numeric && value.isNotBlank() && !isValidMedicalNumeric(value)
+                    OutlinedTextField(
+                        value = value, onValueChange = { updated -> values[spec.key] = if (spec.numeric) updated.filter { it in '0'..'9' || it == '.' } else updated },
+                        label = { Text(spec.label) }, modifier = Modifier.fillMaxWidth(), singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = if (spec.numeric) KeyboardType.Decimal else KeyboardType.Text),
+                        textStyle = TextStyle.Default.copy(textDirection = if (spec.numeric) TextDirection.Ltr else TextDirection.ContentOrRtl),
+                        isError = invalidNumber,
+                        supportingText = if (invalidNumber) ({ Text("أدخل رقمًا صحيحًا.") }) else null,
+                    )
+                }
             }
-            Button(onClick = { onSave(buildBody(specs, values)) }, enabled = !busy && specs.filter(FieldSpec::required).all { values[it.key].orEmpty().isNotBlank() }, modifier = Modifier.fillMaxWidth()) {
+            val requiredComplete = specs.filter(FieldSpec::required).all { values[it.key].orEmpty().isNotBlank() }
+            val numericValuesValid = specs.filter(FieldSpec::numeric).all { isValidMedicalNumeric(values[it.key]) }
+            Button(onClick = { onSave(buildBody(specs, values)) }, enabled = !busy && requiredComplete && numericValuesValid, modifier = Modifier.fillMaxWidth()) {
                 Text(if (busy) "جارٍ الحفظ…" else "حفظ السجل")
             }
         }
@@ -442,9 +459,10 @@ private fun AdministrationForm(medications: JsonObject?, busy: Boolean, onSave: 
     }
 }
 
-private fun fieldsFor(endpoint: String): List<FieldSpec> {
-    val date = LocalDate.now().toString()
-    val time = LocalTime.now().withSecond(0).withNano(0).toString().take(5)
+private fun fieldsFor(endpoint: String, timeZoneId: String? = null): List<FieldSpec> {
+    val zone = runCatching { ZoneId.of(timeZoneId ?: "Asia/Baghdad") }.getOrElse { ZoneId.of("Asia/Baghdad") }
+    val date = LocalDate.now(zone).toString()
+    val time = LocalTime.now(zone).withSecond(0).withNano(0).toString().take(5)
     val notes = FieldSpec("notes", "ملاحظات", required = false)
     return when (endpoint) {
         "glucose" -> listOf(FieldSpec("glucoseValue", "قيمة السكر", numeric = true), FieldSpec("glucoseUnit", "الوحدة", listOf("MG_DL", "MMOL_L"), defaultValue = "MG_DL"), FieldSpec("measurementDate", "التاريخ", defaultValue = date), FieldSpec("measurementTime", "الوقت", defaultValue = time), FieldSpec("measurementContext", "السياق", glucoseContexts, defaultValue = "FASTING"), FieldSpec("source", "مصدر القياس", listOf("FINGERSTICK_METER", "CGM", "LAB", "OTHER", "NOT_SPECIFIED"), defaultValue = "NOT_SPECIFIED"), FieldSpec("symptoms", "الأعراض", required = false), notes)
@@ -468,9 +486,14 @@ private fun buildBody(specs: List<FieldSpec>, values: Map<String, String>): Json
 }
 
 private fun recordTitle(endpoint: String, record: JsonObject): String {
+    if (endpoint == "glucose") return "قراءة السكر"
+    if (endpoint == "administrations") return "جرعة مسجلة"
+    if (endpoint == "medications") {
+        return record["medicationName"]?.jsonPrimitive?.contentOrNull
+            ?: record["medication"]?.let { runCatching { it.jsonObject["medicationName"]?.jsonPrimitive?.contentOrNull }.getOrNull() }
+            ?: "دواء"
+    }
     val keys = when (endpoint) {
-        "glucose" -> listOf("glucoseValue", "glucoseUnit")
-        "medications" -> listOf("medicationName")
         "meals" -> listOf("mealType", "description")
         "activities" -> listOf("activityType")
         "sleep" -> listOf("durationMinutes")
@@ -487,6 +510,76 @@ private fun recordTitle(endpoint: String, record: JsonObject): String {
         }
     }.joinToString(" — ").ifBlank { "سجل" }
 }
+
+/** Ordered patient-facing fields for glucose, medication, and administration cards. */
+internal fun recordPresentationFields(
+    endpoint: String,
+    record: JsonObject,
+    timeZoneId: String? = null,
+    numeralSystem: String? = null,
+): List<MedicalFieldPresentation> {
+    val recordData = if (endpoint == "administrations") {
+        record["administration"]?.let { runCatching { it.jsonObject }.getOrNull() } ?: record
+    } else record
+    val orderedKeys = when (endpoint) {
+        "glucose" -> listOf("glucoseValue", "measurementContext", "measurementDatetime", "source", "minutesAfterMeal", "symptomsText", "notes")
+        "medications" -> listOf("category", "status", "strength", "prescribedDose", "route", "frequency", "usualTime", "startDate", "endDate", "prescriberName", "insulinFormulation", "notes")
+        "administrations" -> listOf("actualDose", "administrationDatetime", "status", "notes")
+        else -> emptyList()
+    }
+    val hiddenOrCombined = setOf("glucoseUnit", "doseUnit", "strengthUnit", "standardizedValueMgdl") + if (endpoint == "medications") setOf("medicationName") else emptySet()
+    val result = mutableListOf<MedicalFieldPresentation>()
+    fun scalar(element: JsonElement?): String? = element?.let { runCatching { it.jsonPrimitive.contentOrNull }.getOrNull() }
+    fun append(key: String, element: JsonElement?, doseUnit: String? = null, strengthUnit: String? = null) {
+        MedicalPresentation.presentRecordField(
+            key = key,
+            value = scalar(element),
+            timeZoneId = timeZoneId,
+            numeralSystem = numeralSystem,
+            glucoseUnit = scalar(recordData["glucoseUnit"]),
+            doseUnit = doseUnit,
+            strengthUnit = strengthUnit,
+        )?.let(result::add)
+    }
+
+    if (endpoint == "administrations") {
+        val medicationName = record["medication"]?.let {
+            runCatching { it.jsonObject["medicationName"]?.jsonPrimitive?.contentOrNull }.getOrNull()
+        }
+        medicationName?.takeIf(String::isNotBlank)?.let { result += MedicalFieldPresentation("الدواء", it) }
+    }
+    orderedKeys.forEach { key ->
+        val unit = scalar(recordData["doseUnit"])
+        val strengthUnit = scalar(recordData["strengthUnit"])
+        append(key, recordData[key], doseUnit = unit, strengthUnit = strengthUnit)
+    }
+    recordData.keys.filter { it !in orderedKeys && it !in hiddenOrCombined }.forEach { key ->
+        if (key == "medication") return@forEach
+        append(key, recordData[key])
+    }
+    return result
+}
+
+/** Restores the form's date/time controls from the API's timestamp without changing its instant. */
+internal fun recordFormInitialValue(key: String, initial: JsonObject?, defaultValue: String, timeZoneId: String? = null): String {
+    val direct = initial?.get(key)?.let { runCatching { it.jsonPrimitive.contentOrNull }.getOrNull() }
+    if (!direct.isNullOrBlank()) return direct
+    if (initial == null) return defaultValue
+    if (key == "symptoms") {
+        return initial["symptomsText"]?.let { runCatching { it.jsonPrimitive.contentOrNull }.getOrNull() }.orEmpty()
+    }
+    if (key !in setOf("measurementDate", "measurementTime")) return defaultValue
+    val raw = initial["measurementDatetime"]?.let { runCatching { it.jsonPrimitive.contentOrNull }.getOrNull() }
+        ?: return defaultValue
+    val instant = runCatching { Instant.parse(raw) }.getOrElse {
+        runCatching { OffsetDateTime.parse(raw).toInstant() }.getOrNull()
+    } ?: return ""
+    val zone = runCatching { ZoneId.of(timeZoneId ?: "Asia/Baghdad") }.getOrElse { ZoneId.of("Asia/Baghdad") }
+    val local = instant.atZone(zone)
+    return if (key == "measurementDate") DateTimeFormatter.ISO_LOCAL_DATE.format(local) else DateTimeFormatter.ofPattern("HH:mm").format(local)
+}
+
+internal fun isValidMedicalNumeric(value: String?): Boolean = value.isNullOrBlank() || value.trim().toBigDecimalOrNull() != null
 
 private fun emptyLabel(endpoint: String) = when (endpoint) {
     "glucose" -> "لم تسجل أي قياس بعد."; "medications" -> "لا توجد أدوية مسجلة."; "administrations" -> "لا توجد جرعات مسجلة."
