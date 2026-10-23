@@ -37,9 +37,13 @@ class SessionAuthenticator @Inject constructor(
             .header("X-Refresh-Request-ID", UUID.randomUUID().toString())
             .post(body.toRequestBody("application/json".toMediaType()))
             .build()
+        var refreshTokenRejected = false
         val refreshed = try {
             bareClient.newCall(request).execute().use { result ->
-                if (!result.isSuccessful) null
+                if (!result.isSuccessful) {
+                    refreshTokenRejected = result.code == 401 || result.code == 403
+                    null
+                }
                 else {
                     val text = result.body?.string() ?: return@use null
                     val data = json.parseToJsonElement(text).jsonObject["data"]?.jsonObject ?: return@use null
@@ -54,11 +58,10 @@ class SessionAuthenticator @Inject constructor(
         } catch (_: IOException) {
             return@synchronized null
         } catch (_: Exception) {
-            runBlocking { tokenStore.clear() }
             return@synchronized null
         }
         if (refreshed == null) {
-            runBlocking { tokenStore.clear() }
+            if (refreshTokenRejected) runBlocking { tokenStore.clear() }
             return@synchronized null
         }
         runBlocking { tokenStore.save(SessionTokens(refreshed.accessToken, refreshed.refreshToken)) }
