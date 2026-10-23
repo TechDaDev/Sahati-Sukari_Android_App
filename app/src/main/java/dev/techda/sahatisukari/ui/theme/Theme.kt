@@ -12,6 +12,7 @@ import dev.techda.sahatisukari.R
 private val SahatiColors = lightColorScheme(
     primary = Color(0xFF087E8B), onPrimary = Color.White,
     secondary = Color(0xFF168AAD), onSecondary = Color.White,
+    secondaryContainer = Color(0xFFEAF4F8), onSecondaryContainer = Color(0xFF087E8B),
     background = Color(0xFFF4F9FC), onBackground = Color(0xFF16324F),
     surface = Color.White, onSurface = Color(0xFF16324F),
     surfaceVariant = Color(0xFFEAF4F8), outline = Color(0xFFD5E7EF),

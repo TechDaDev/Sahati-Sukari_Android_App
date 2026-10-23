@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Assessment
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -19,6 +21,7 @@ import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.unit.Density
@@ -39,6 +42,22 @@ import kotlin.math.abs
 
 class UiCorrectionTest {
     @get:Rule val composeRule = createComposeRule()
+
+    @Test fun statCardArabicContentAlignsToPhysicalRightInRtlLayout() {
+        composeRule.setContent {
+            CompositionLocalProvider(androidx.compose.ui.platform.LocalLayoutDirection provides LayoutDirection.Rtl) {
+                SahatiTheme {
+                    Box(Modifier.width(360.dp).wrapContentHeight()) {
+                        StatCard("آخر قراءة سكر", "١٢٥", "لم تسجل أي قراءة اليوم", Icons.Outlined.Assessment)
+                    }
+                }
+            }
+        }
+
+        val cardWidth = composeRule.onRoot().fetchSemanticsNode().boundsInRoot.width
+        val label = composeRule.onNodeWithText("آخر قراءة سكر").fetchSemanticsNode().boundsInRoot
+        assertTrue("Arabic stat label should sit on the physical right in RTL", label.center.x > cardWidth / 2f)
+    }
 
     @Test fun pageTitleAlignsToRightInRtlLayout() {
         composeRule.setContent {
