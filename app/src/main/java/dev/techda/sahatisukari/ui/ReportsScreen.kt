@@ -4,7 +4,6 @@ import android.content.Intent
 import android.content.ActivityNotFoundException
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -87,10 +86,12 @@ private fun JsonSummary(summary: kotlinx.serialization.json.JsonObject) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("ملخص الفترة", Modifier.fillMaxWidth(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, textAlign = TextAlign.Start)
             presentation.rows.forEach { (label, value) ->
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(value, fontWeight = FontWeight.SemiBold)
-                    Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
+                MedicalLabelValueRow(
+                    label = label,
+                    value = value,
+                    labelStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                    valueStyle = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                )
             }
         }
     }

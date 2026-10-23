@@ -14,7 +14,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.dp
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -23,11 +22,6 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import java.math.BigDecimal
-import java.time.LocalDate
-import java.time.format.DateTimeFormatter
-import java.util.Locale
-import java.util.logging.Logger
 
 internal data class HealthProfileLine(val label: String, val value: String)
 internal data class HealthHistoryRecord(val title: String, val fields: List<HealthProfileLine>)
@@ -40,13 +34,20 @@ internal fun healthHistoryPresentation(endpoint: String, response: JsonObject?):
         fun value(key: String) = row[key]?.jsonPrimitive?.contentOrNull?.takeIf(String::isNotBlank)
         val fields = buildList {
             if (endpoint == "weight") {
-                value("weightKg")?.let { add(HealthProfileLine("الوزن", "${localizedDigits(decimal(it, 1), null)} كغم")) }
+                value("weightKg")?.let { add(HealthProfileLine("الوزن", MedicalPresentation.formatWeight(it))) }
                 value("measurementDate")?.let { add(HealthProfileLine("تاريخ القياس", formatProfileDate(it, null))) }
                 value("notes")?.let { add(HealthProfileLine("ملاحظات", it)) }
             } else {
-                value("testType")?.let { add(HealthProfileLine("نوع التحليل", labTestLabel(it))) }
-                value("value")?.let { add(HealthProfileLine("النتيجة", decimal(it, 2))) }
-                value("valueSecondary")?.let { add(HealthProfileLine("قيمة إضافية", decimal(it, 2))) }
+                val testType = value("testType")
+                testType?.let { add(HealthProfileLine("نوع التحليل", MedicalPresentation.label(MedicalEnumField.LAB_TEST_TYPE, it))) }
+                val primaryValue = value("value")
+                val secondaryValue = value("valueSecondary")
+                if (testType == "BLOOD_PRESSURE" && primaryValue != null && secondaryValue != null) {
+                    add(HealthProfileLine("النتيجة", MedicalPresentation.formatBloodPressure(primaryValue, secondaryValue)))
+                } else {
+                    primaryValue?.let { add(HealthProfileLine("النتيجة", MedicalPresentation.formatLabValue(it))) }
+                }
+                if (testType != "BLOOD_PRESSURE") secondaryValue?.let { add(HealthProfileLine("قيمة إضافية", MedicalPresentation.formatLabValue(it))) }
                 value("unit")?.let { add(HealthProfileLine("الوحدة", it)) }
                 value("testDate")?.let { add(HealthProfileLine("تاريخ التحليل", formatProfileDate(it, null))) }
                 value("referenceRange")?.let { add(HealthProfileLine("المدى المرجعي", it)) }
@@ -56,13 +57,6 @@ internal fun healthHistoryPresentation(endpoint: String, response: JsonObject?):
         if (fields.isEmpty()) return@mapNotNull null
         HealthHistoryRecord(fields.first().value, fields)
     }
-}
-
-private fun labTestLabel(code: String) = when (code) {
-    "HBA1C" -> "الهيموغلوبين السكري (HbA1c)"; "CREATININE" -> "الكرياتينين"; "EGFR" -> "معدل الترشيح الكبيبي (eGFR)";
-    "URINE_ACR" -> "نسبة الألبومين إلى الكرياتينين في البول"; "BLOOD_PRESSURE" -> "ضغط الدم"; "TOTAL_CHOLESTEROL" -> "الكوليسترول الكلي";
-    "LDL" -> "الكوليسترول الضار (LDL)"; "HDL" -> "الكوليسترول النافع (HDL)"; "TRIGLYCERIDES" -> "الدهون الثلاثية";
-    "OTHER" -> "تحليل آخر"; else -> "نوع تحليل محفوظ"
 }
 
 internal data class HealthConditionLine(
@@ -110,8 +104,8 @@ internal fun healthProfilePresentation(root: JsonObject?): HealthProfilePresenta
         profile.stringAt("age")?.let { add(HealthProfileLine("العمر", "${localizedDigits(it, numeralSystem)} سنة")) }
         line("تاريخ الميلاد", "dateOfBirth") { formatProfileDate(it, numeralSystem) }?.let(::add)
         profile.stringAt("heightCm")?.let { add(HealthProfileLine("الطول", "${localizedDigits(it, numeralSystem)} سم")) }
-        profile.stringAt("currentWeightKg")?.let { add(HealthProfileLine("الوزن الحالي", "${localizedDigits(decimal(it, 1), numeralSystem)} كغم")) }
-        profile.stringAt("bmi")?.let { add(HealthProfileLine("مؤشر كتلة الجسم", localizedDigits(decimal(it, 1), numeralSystem))) }
+        profile.stringAt("currentWeightKg")?.let { add(HealthProfileLine("الوزن الحالي", MedicalPresentation.formatWeight(it, numeralSystem))) }
+        profile.stringAt("bmi")?.let { add(HealthProfileLine("مؤشر كتلة الجسم", MedicalPresentation.formatBmi(it, numeralSystem))) }
     }
 
     val identity = buildList {
@@ -179,39 +173,7 @@ internal fun conditionTypeLabel(code: String): String = profileEnumLabel("condit
 
 internal fun conditionStatusLabel(code: String): String = profileEnumLabel("conditionStatus", code)
 
-internal fun profileEnumLabel(field: String, code: String): String {
-    val labels = when (field) {
-        "gender" -> mapOf("MALE" to "ذكر", "FEMALE" to "أنثى")
-        "conditionType" -> mapOf(
-            "HYPERTENSION" to "ارتفاع ضغط الدم",
-            "HEART_DISEASE" to "أمراض القلب",
-            "KIDNEY_DISEASE" to "أمراض الكلى",
-            "HIGH_CHOLESTEROL" to "ارتفاع الكوليسترول",
-            "RETINOPATHY" to "اعتلال الشبكية السكري",
-            "NEUROPATHY" to "اعتلال الأعصاب السكري",
-            "FOOT_PROBLEMS" to "مشاكل القدم السكرية",
-            "OTHER" to "حالات طبية أخرى",
-        )
-        "conditionStatus", "status:" -> mapOf("DIAGNOSED" to "مُشخّصة", "NOT_DIAGNOSED" to "غير مُشخّصة", "UNKNOWN" to "غير معروف")
-        "diabetesType" -> mapOf("TYPE_1" to "النوع الأول", "TYPE_2" to "النوع الثاني", "OTHER" to "نوع آخر", "UNKNOWN" to "غير معروف")
-        "monitoringMethod" -> mapOf("FINGERSTICK" to "جهاز قياس من الإصبع", "CGM" to "جهاز مراقبة مستمرة (CGM)", "BOTH" to "كلاهما", "NOT_SPECIFIED" to "غير محدد")
-        "treatmentApproach" -> mapOf("INSULIN" to "أنسولين", "NON_INSULIN_MEDICATION" to "أدوية فموية أو غير أنسولينية", "BOTH" to "أنسولين مع أدوية أخرى", "LIFESTYLE_ONLY" to "نمط حياة فقط (بدون أدوية)", "NOT_SPECIFIED" to "غير محدد")
-        "hypoglycemiaHistory", "gestationalDiabetesHistory", "familyHistoryDiabetes" -> mapOf("YES" to "نعم", "NO" to "لا", "UNSURE" to "غير متأكد")
-        "hypoglycemiaAwareness" -> mapOf("NORMAL" to "طبيعي", "REDUCED" to "منخفض", "UNSURE" to "غير متأكد", "NOT_SPECIFIED" to "غير محدد")
-        "pregnancyStatus" -> mapOf("NOT_APPLICABLE" to "لا ينطبق", "NOT_PREGNANT" to "غير حامل", "PREGNANT" to "حامل", "BREASTFEEDING" to "مرضعة", "NOT_SPECIFIED" to "أفضّل عدم الذكر")
-        "smokingStatus" -> mapOf("NEVER" to "لم أدخّن", "CURRENT" to "مدخّن حاليًا", "FORMER" to "مدخّن سابق", "NOT_SPECIFIED" to "غير محدد")
-        "preferredGlucoseUnit" -> mapOf("MG_DL" to "ملغم/دل", "MMOL_L" to "مليمول/لتر")
-        "numeralSystem" -> mapOf("LATIN" to "الأرقام الغربية", "ARABIC_INDIC" to "الأرقام العربية الهندية")
-        else -> emptyMap()
-    }
-    labels[code]?.let { return it }
-    Logger.getLogger("SahatiProfile").warning("Unsupported enum in profile field: $field")
-    return when (field) {
-        "conditionType" -> "حالة طبية غير معروفة"
-        "conditionStatus", "status:" -> "حالة محفوظة غير معروفة"
-        else -> "قيمة محفوظة غير معروفة"
-    }
-}
+internal fun profileEnumLabel(field: String, code: String): String = profileMedicalEnumLabel(field, code)
 
 @Composable
 internal fun HealthProfileContent(
@@ -285,21 +247,14 @@ private fun SahatiProfileCard(title: String, content: @Composable () -> Unit) {
 @Composable
 private fun ProfileLines(lines: List<HealthProfileLine>) {
     lines.forEach { line ->
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(
-                line.label,
-                modifier = Modifier.padding(end = 10.dp),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Start,
-            )
-            Text(
-                line.value,
-                modifier = Modifier.weight(1f),
-                style = MaterialTheme.typography.bodyMedium.copy(textDirection = TextDirection.ContentOrLtr),
-                textAlign = TextAlign.Start,
-            )
-        }
+        MedicalLabelValueRow(
+            label = line.label,
+            value = line.value,
+            labelModifier = Modifier.padding(end = 10.dp),
+            valueWeight = 1f,
+            labelStyle = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+            valueStyle = MaterialTheme.typography.bodyMedium,
+        )
     }
 }
 
@@ -314,18 +269,6 @@ private fun JsonElement.objectOrNull(): JsonObject? = runCatching { jsonObject }
 
 private fun profileEnumLabelForGender(value: String): String = profileEnumLabel("gender", value)
 
-private fun decimal(value: String, scale: Int): String = runCatching {
-    BigDecimal(value).setScale(scale, java.math.RoundingMode.HALF_UP).stripTrailingZeros().toPlainString()
-}.getOrDefault("—")
+private fun formatProfileDate(value: String, numeralSystem: String?): String = MedicalPresentation.formatDateOnly(value, numeralSystem)
 
-private fun formatProfileDate(value: String, numeralSystem: String?): String = runCatching {
-    val date = LocalDate.parse(value.take(10))
-    localizedDigits(date.format(DateTimeFormatter.ofPattern("dd/MM/yyyy", Locale.ROOT)), numeralSystem)
-}.getOrElse {
-    Logger.getLogger("SahatiProfile").warning("Invalid profile date omitted")
-    "تاريخ غير متاح"
-}
-
-private fun localizedDigits(value: String, numeralSystem: String?): String = if (numeralSystem == "ARABIC_INDIC") {
-    value.map { char -> if (char in '0'..'9') ('٠'.code + (char - '0')).toChar() else char }.joinToString("")
-} else value
+private fun localizedDigits(value: String, numeralSystem: String?): String = MedicalPresentation.localizedDigits(value, numeralSystem)

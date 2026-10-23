@@ -331,9 +331,24 @@ private fun RecordList(endpoint: String, data: JsonObject?, onDelete: (String, S
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp), horizontalAlignment = Alignment.End) {
                 Text(recordTitle(endpoint, record), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Start)
-                record.entries.filter { it.key !in setOf("id", "patientId", "createdAt", "updatedAt") && it.value !is JsonObject && it.value !is JsonArray }.take(5).forEach { (key, value) ->
-                    Text("${profileLabel(key)}: ${value.jsonPrimitive.contentOrNull ?: "—"}", Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Start)
-                }
+                record.entries.asSequence()
+                    .filter { it.value !is JsonObject && it.value !is JsonArray }
+                    .mapNotNull { (key, value) ->
+                        MedicalPresentation.presentRecordField(
+                            key,
+                            value.jsonPrimitive.contentOrNull,
+                            glucoseUnit = record["glucoseUnit"]?.jsonPrimitive?.contentOrNull,
+                        )
+                    }
+                    .take(5)
+                    .forEach { field ->
+                        MedicalLabelValueRow(
+                            label = field.label,
+                            value = field.value,
+                            labelStyle = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                            valueStyle = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                        )
+                    }
                 if (id != null) {
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         if (onEdit != null && endpoint in setOf("glucose", "medications")) OutlinedButton(onClick = { onEdit(id, record) }) { Text("تعديل") }
@@ -463,7 +478,14 @@ private fun recordTitle(endpoint: String, record: JsonObject): String {
         "weight" -> listOf("weightKg")
         else -> listOf("testType")
     }
-    return keys.mapNotNull { key -> record[key]?.jsonPrimitive?.contentOrNull?.let(::enumLabel) }.joinToString(" — ").ifBlank { "سجل" }
+    return keys.mapNotNull { key ->
+        val raw = record[key]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+        if (key == "glucoseValue") {
+            MedicalPresentation.formatGlucose(raw, record["glucoseUnit"]?.jsonPrimitive?.contentOrNull)
+        } else {
+            MedicalPresentation.presentRecordField(key, raw)?.value
+        }
+    }.joinToString(" — ").ifBlank { "سجل" }
 }
 
 private fun emptyLabel(endpoint: String) = when (endpoint) {
@@ -471,10 +493,4 @@ private fun emptyLabel(endpoint: String) = when (endpoint) {
     "meals" -> "لا توجد وجبات مسجلة."; "activities" -> "لا توجد أنشطة مسجلة."; "sleep" -> "لا توجد سجلات نوم."; "symptoms" -> "لا توجد أعراض مسجلة."; "factors" -> "لا توجد عوامل يومية مسجلة."; "weight" -> "لا توجد قياسات وزن."; else -> "لا توجد نتائج تحاليل مسجلة."
 }
 
-private fun profileLabel(key: String) = when (key) {
-    "fullName" -> "الاسم"; "email" -> "البريد الإلكتروني"; "phone" -> "الهاتف"; "gender" -> "الجنس"; "dateOfBirth" -> "تاريخ الميلاد"; "heightCm" -> "الطول"; "timezone" -> "المنطقة الزمنية"; "diabetesType" -> "نوع السكري"; "diagnosisDate" -> "تاريخ التشخيص"; "diagnosisYear" -> "سنة التشخيص"; "monitoringMethod" -> "طريقة المتابعة"; "treatmentApproach" -> "أسلوب العلاج"; "preferredGlucoseUnit" -> "وحدة السكر المفضلة"; "numeralSystem" -> "نظام الأرقام"; "testType" -> "نوع التحليل"; "value" -> "النتيجة"; "valueSecondary" -> "قيمة إضافية"; "unit" -> "الوحدة"; "testDate" -> "تاريخ التحليل"; "measurementDate" -> "تاريخ القياس"; "weightKg" -> "الوزن بالكيلوغرام"; "notes" -> "ملاحظات"; "referenceRange" -> "المدى المرجعي"; else -> key
-}
-
-private fun enumLabel(value: String) = when (value) {
-    "MG_DL" -> "ملغم/دل"; "MMOL_L" -> "مليمول/لتر"; "FASTING" -> "صائم"; "BEFORE_BREAKFAST" -> "قبل الإفطار"; "AFTER_BREAKFAST" -> "بعد الإفطار"; "BEFORE_LUNCH" -> "قبل الغداء"; "AFTER_LUNCH" -> "بعد الغداء"; "BEFORE_DINNER" -> "قبل العشاء"; "AFTER_DINNER" -> "بعد العشاء"; "BEFORE_SLEEP" -> "قبل النوم"; "FINGERSTICK_METER" -> "جهاز قياس"; "CGM" -> "مستشعر مستمر"; "LAB" -> "مختبر"; "NOT_SPECIFIED" -> "غير محدد"; "BREAKFAST" -> "الإفطار"; "LUNCH" -> "الغداء"; "DINNER" -> "العشاء"; "SNACK" -> "وجبة خفيفة"; "LIGHT" -> "خفيف"; "MODERATE" -> "متوسط"; "VIGOROUS" -> "شديد"; "GOOD" -> "جيد"; "FAIR" -> "متوسط"; "POOR" -> "ضعيف"; "DIZZINESS" -> "دوخة"; "SWEATING" -> "تعرق"; "TREMOR" -> "رجفة"; "EXCESSIVE_THIRST" -> "عطش شديد"; "FATIGUE" -> "إرهاق"; "HEADACHE" -> "صداع"; "BLURRED_VISION" -> "تشوش الرؤية"; "PALPITATIONS" -> "خفقان"; "NAUSEA" -> "غثيان"; "MILD" -> "خفيف"; "SEVERE" -> "شديد"; "ILLNESS" -> "مرض"; "STRESS" -> "توتر"; "TRAVEL" -> "سفر"; "MENSTRUATION" -> "الدورة الشهرية"; "INSULIN" -> "إنسولين"; "BIGUANIDE" -> "بيغوانيد"; "OTHER" -> "أخرى"; "ORAL" -> "عن طريق الفم"; "SUBCUTANEOUS" -> "تحت الجلد"; "ONCE_DAILY" -> "مرة يوميًا"; "TWICE_DAILY" -> "مرتين يوميًا"; "THREE_TIMES_DAILY" -> "ثلاث مرات يوميًا"; "FOUR_TIMES_DAILY" -> "أربع مرات يوميًا"; "WITH_MEALS" -> "مع الوجبات"; "BEFORE_MEALS" -> "قبل الوجبات"; "AT_BEDTIME" -> "قبل النوم"; "AS_NEEDED" -> "عند الحاجة"; "WEEKLY" -> "أسبوعيًا"; else -> value.replace('_', ' ').lowercase()
-}
+private fun enumLabel(value: String) = MedicalPresentation.genericEnumLabel(value)

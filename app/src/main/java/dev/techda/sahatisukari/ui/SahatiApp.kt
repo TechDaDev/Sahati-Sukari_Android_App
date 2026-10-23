@@ -80,10 +80,6 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import java.time.LocalDate
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
-import java.util.Locale
 
 @Composable
 fun SahatiRoot(authViewModel: AuthViewModel = hiltViewModel()) {
@@ -198,7 +194,7 @@ private fun DashboardScreen(user: AuthUser, modifier: Modifier = Modifier, onGlu
         val profile = (state as? DashboardState.Ready)?.data?.obj("profile")
         val patientName = profile?.string("fullName") ?: user.email
         val zone = profile?.string("timezone") ?: "Asia/Baghdad"
-        Text("مرحبًا $patientName — اليوم ${todayDate(zone)}", modifier = Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Start)
+        Text("مرحبًا $patientName — اليوم ${todayDate(zone, profile?.string("numeralSystem"))}", modifier = Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Start)
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
             Button(onClick = onGlucose, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 13.dp, vertical = 7.dp)) { Text("إضافة قياس سكر") }
             OutlinedButton(onClick = onReports, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 13.dp, vertical = 7.dp)) { Text("التقارير") }
@@ -211,14 +207,20 @@ private fun DashboardScreen(user: AuthUser, modifier: Modifier = Modifier, onGlu
                     TextButton(onClick = viewModel::refresh) { Text("إعادة المحاولة") }
                 }
             }
-            is DashboardState.Ready -> DashboardContent(current.data, onProfile)
+            is DashboardState.Ready -> DashboardContent(
+                current.data,
+                timeZoneId = zone,
+                numeralSystem = profile?.string("numeralSystem"),
+                glucoseUnit = profile?.string("preferredGlucoseUnit") ?: "MG_DL",
+                onProfile = onProfile,
+            )
         }
         Text("هذه اللوحة تعرض السجلات التي أضفتها فقط. لا تقدم تشخيصًا أو توصية علاجية.", Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Start)
     }
 }
 
 @Composable
-private fun DashboardContent(response: JsonObject, onProfile: () -> Unit) {
+private fun DashboardContent(response: JsonObject, timeZoneId: String, numeralSystem: String?, glucoseUnit: String, onProfile: () -> Unit) {
     val dash = response.obj("dashboard") ?: return
     val completion = dash.obj("completion")
     val percent = completion?.int("percent")
@@ -226,38 +228,42 @@ private fun DashboardContent(response: JsonObject, onProfile: () -> Unit) {
         Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFFEEF8F8)), shape = RoundedCornerShape(SahatiUiTokens.cardRadius)) {
             Column(Modifier.padding(SahatiUiTokens.cardPadding), verticalArrangement = Arrangement.spacedBy(4.dp), horizontalAlignment = Alignment.End) {
                 Text("أكمل ملفك الصحي لتحصل على متابعة أدق", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.Start)
-                Text("نسبة الاكتمال الحالية ${digits(percent)}%", style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Start, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("نسبة الاكتمال الحالية ${MedicalPresentation.localizedDigits(percent.toString(), numeralSystem)}%", style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Start, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 TextButton(onClick = onProfile) { Text("إكمال الملف الصحي") }
             }
         }
     }
     val latest = dash.obj("latestGlucose")
-    StatCard("آخر قراءة سكر", latest?.let { listOfNotNull(it.string("glucoseValue"), it.string("glucoseUnit")).joinToString(" ") } ?: "—", if (latest == null) "لم تسجل أي قراءة بعد" else latest.string("measurementDatetime").orEmpty(), Icons.Outlined.Bloodtype)
-    StatCard("قياسات اليوم", dash.string("todayReadings") ?: "—", if (dash.int("todayReadings") == 0) "لم تسجل أي قراءة اليوم" else "قراءات مسجّلة اليوم", Icons.Outlined.Assessment)
+    val latestGlucose = latest?.let {
+        MedicalPresentation.formatGlucose(it.string("glucoseValue"), it.string("glucoseUnit") ?: glucoseUnit, numeralSystem)
+    } ?: "—"
+    val latestAt = latest?.let { MedicalPresentation.formatInstant(it.string("measurementDatetime"), timeZoneId, numeralSystem) }.orEmpty()
+    StatCard("آخر قراءة سكر", latestGlucose, if (latest == null) "لم تسجل أي قراءة بعد" else latestAt, Icons.Outlined.Bloodtype)
+    StatCard("قياسات اليوم", dash.string("todayReadings")?.let { MedicalPresentation.formatDecimal(it, 0, numeralSystem) } ?: "—", if (dash.int("todayReadings") == 0) "لم تسجل أي قراءة اليوم" else "قراءات مسجّلة اليوم", Icons.Outlined.Assessment)
     StatCard("آخر جرعة دواء مسجّلة", dash.obj("lastAdministration")?.let { "جرعة مسجّلة" } ?: "—", if (dash.obj("lastAdministration") == null) "لا توجد جرعات مسجّلة" else "", Icons.Outlined.Medication)
     val activityMinutes = dash.string("activityMinutes") ?: "0"
-    StatCard("نشاط اليوم", if (activityMinutes == "0") "—" else "$activityMinutes دقيقة", "${dash.array("todayActivities")?.size ?: 0} نشاط مسجّل", Icons.Outlined.CalendarMonth)
+    StatCard("نشاط اليوم", if (activityMinutes == "0") "—" else MedicalPresentation.formatActivityDuration(activityMinutes, numeralSystem), "${MedicalPresentation.localizedDigits((dash.array("todayActivities")?.size ?: 0).toString(), numeralSystem)} نشاط مسجّل", Icons.Outlined.CalendarMonth)
     Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(SahatiUiTokens.cardRadius), elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)) {
         Column(Modifier.padding(SahatiUiTokens.cardPadding), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("اتجاه قراءات السكر (آخر 14 يومًا)", fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Start)
-            TrendChart(dash)
+            TrendChart(dash, glucoseUnit, numeralSystem)
         }
     }
     Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(SahatiUiTokens.cardRadius), elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)) {
         CompositionLocalProvider(androidx.compose.ui.platform.LocalLayoutDirection provides LayoutDirection.Rtl) {
             Column(Modifier.padding(SahatiUiTokens.cardPadding), verticalArrangement = Arrangement.spacedBy(8.dp), horizontalAlignment = Alignment.End) {
                 Text("ملخص اليوم", fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Start)
-                SummaryRow("الوجبات المسجّلة", dash.string("mealsToday") ?: "—")
-                SummaryRow("الأعراض المسجّلة", dash.array("todaySymptoms")?.size?.toString() ?: "—")
-                SummaryRow("الوزن الأخير", dash.array("latestWeight")?.firstOrNull()?.jsonObject?.string("weightKg")?.plus(" كغم") ?: "—")
-                SummaryRow("آخر HbA1c مسجّل", dash.array("latestHba1c")?.firstOrNull()?.jsonObject?.string("value")?.plus("%") ?: "—")
+                SummaryRow("الوجبات المسجّلة", dash.string("mealsToday")?.let { MedicalPresentation.formatDecimal(it, 0, numeralSystem) } ?: "—")
+                SummaryRow("الأعراض المسجّلة", dash.array("todaySymptoms")?.size?.let { MedicalPresentation.localizedDigits(it.toString(), numeralSystem) } ?: "—")
+                SummaryRow("الوزن الأخير", dash.array("latestWeight")?.firstOrNull()?.jsonObject?.string("weightKg")?.let { MedicalPresentation.formatWeight(it, numeralSystem) } ?: "—")
+                SummaryRow("آخر HbA1c مسجّل", dash.array("latestHba1c")?.firstOrNull()?.jsonObject?.string("value")?.let { MedicalPresentation.formatHbA1c(it, numeralSystem) } ?: "—")
             }
         }
     }
 }
 
 @Composable
-private fun TrendChart(dashboard: JsonObject) {
+private fun TrendChart(dashboard: JsonObject, glucoseUnit: String, numeralSystem: String?) {
     val points = dashboard.array("trendData").orEmpty().mapNotNull { element ->
         val value = runCatching { element.jsonObject.string("value")?.toFloatOrNull() }.getOrNull() ?: return@mapNotNull null
         value
@@ -268,7 +274,11 @@ private fun TrendChart(dashboard: JsonObject) {
     }
     val lineColor = MaterialTheme.colorScheme.primary
     val gridColor = MaterialTheme.colorScheme.outlineVariant
-    Text("${points.minOrNull()} — ${points.maxOrNull()}", Modifier.fillMaxWidth(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Start)
+    MedicalValueText(
+        "${MedicalPresentation.formatGlucose(points.minOrNull()?.toString(), glucoseUnit, numeralSystem)} — ${MedicalPresentation.formatGlucose(points.maxOrNull()?.toString(), glucoseUnit, numeralSystem)}",
+        Modifier.fillMaxWidth(),
+        style = MaterialTheme.typography.labelSmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+    )
     Canvas(Modifier.fillMaxWidth().height(150.dp)) {
         val horizontalInset = 8.dp.toPx()
         val verticalInset = 8.dp.toPx()
@@ -299,8 +309,8 @@ internal fun StatCard(label: String, value: String, detail: String, icon: ImageV
             Icon(icon, contentDescription = null, tint = Color(0xFF4A90D9), modifier = Modifier.size(18.dp))
             Column(Modifier.weight(1f), horizontalAlignment = Alignment.Start, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                if (detail.isNotBlank()) Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Start)
+                MedicalValueText(value, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold))
+                if (detail.isNotBlank()) MedicalValueText(detail, style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant))
             }
         }
     }
@@ -308,10 +318,12 @@ internal fun StatCard(label: String, value: String, detail: String, icon: ImageV
 
 @Composable
 internal fun SummaryRow(label: String, value: String) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value, fontWeight = FontWeight.Bold)
-    }
+    MedicalLabelValueRow(
+        label = label,
+        value = value,
+        labelStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+        valueStyle = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+    )
 }
 
 @Composable
@@ -341,9 +353,8 @@ fun EmergencyHelp(modifier: Modifier = Modifier, onBack: (() -> Unit)? = null) {
     }
 }
 
-private fun todayDate(zone: String): String = runCatching { LocalDate.now(ZoneId.of(zone)).format(DateTimeFormatter.ofPattern("yyyy/MM/dd", Locale.forLanguageTag("ar-IQ-u-nu-latn"))) }.getOrDefault("")
+private fun todayDate(zone: String, numeralSystem: String?): String = MedicalPresentation.formatToday(zone, numeralSystem)
 private fun JsonObject.obj(key: String): JsonObject? = (this[key] as? JsonObject)
 private fun JsonObject.array(key: String): JsonArray? = (this[key] as? JsonArray)
 private fun JsonObject.string(key: String): String? = this[key]?.jsonPrimitive?.contentOrNull
 private fun JsonObject.int(key: String): Int? = string(key)?.toIntOrNull()
-private fun digits(value: Int) = String.format(Locale.forLanguageTag("ar-IQ-u-nu-latn"), "%d", value)

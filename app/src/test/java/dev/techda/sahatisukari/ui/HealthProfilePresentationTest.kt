@@ -59,7 +59,7 @@ class HealthProfilePresentationTest {
         assertEquals("غير مُشخّصة", model.conditions.first().status)
         assertEquals("حالة طبية غير معروفة", model.conditions[1].label)
         assertEquals("حالة محفوظة غير معروفة", model.conditions[1].status)
-        assertTrue(model.preferences.any { it.value == "ملغم/دل" })
+        assertTrue(model.preferences.any { it.value == "mg/dL" })
         assertFalse(visible.contains("synthetic-uuid"))
         assertFalse(visible.contains("patientId"))
         assertFalse(visible.contains("conditionType"))
