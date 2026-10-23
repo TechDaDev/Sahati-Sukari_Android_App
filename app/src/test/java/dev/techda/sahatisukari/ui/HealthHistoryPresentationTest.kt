@@ -20,7 +20,7 @@ class HealthHistoryPresentationTest {
     @Test fun labHistoryShowsAllWebsiteFieldsAndLocalizesTestType() {
         val data = Json.parseToJsonElement("""{"items":[{"id":"internal","patientId":"internal","testType":"HBA1C","value":"6.2","valueSecondary":"6.1","unit":"%","testDate":"2026-10-20","referenceRange":"4-5.6","notes":"متابعة"}]}""").jsonObject
         val row = healthHistoryPresentation("labs", data).single()
-        assertEquals("الهيموغلوبين السكري (HbA1c)", row.title)
+        assertEquals("السكر التراكمي (HbA1c)", row.title)
         assertEquals(7, row.fields.size)
         assertTrue(row.fields.any { it.label == "قيمة إضافية" })
         assertTrue(row.fields.any { it.label == "المدى المرجعي" })

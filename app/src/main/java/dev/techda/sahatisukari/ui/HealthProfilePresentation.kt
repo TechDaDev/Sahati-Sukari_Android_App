@@ -25,6 +25,10 @@ import kotlinx.serialization.json.jsonPrimitive
 
 internal data class HealthProfileLine(val label: String, val value: String)
 internal data class HealthHistoryRecord(val title: String, val fields: List<HealthProfileLine>)
+internal data class HealthProfileHistorySection(val endpoint: String, val title: String)
+
+internal fun healthProfileHistorySections(): List<HealthProfileHistorySection> =
+    listOf(HealthProfileHistorySection("labs", "التحاليل المخبرية"))
 
 internal fun healthHistoryPresentation(endpoint: String, response: JsonObject?): List<HealthHistoryRecord> {
     if (endpoint !in setOf("weight", "labs")) return emptyList()

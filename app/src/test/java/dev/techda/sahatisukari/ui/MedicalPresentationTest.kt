@@ -79,7 +79,7 @@ class MedicalPresentationTest {
         assertEquals("75.36", MedicalPresentation.formatLabValue("75.360"))
         assertEquals("1.5 mg", MedicalPresentation.formatMedicationDose("1.500", "MG"))
         assertEquals("120/80 mmHg", MedicalPresentation.formatBloodPressure("120.0", "80.00"))
-        assertEquals("ساعة واحدة و 30 دقيقة", MedicalPresentation.formatActivityDuration("90"))
+        assertEquals("ساعة و 30 دقيقة", MedicalPresentation.formatActivityDuration("90"))
         assertEquals("7 ساعات", MedicalPresentation.formatSleepDuration("420"))
         assertEquals("٧٥٫٣٦", MedicalPresentation.formatDecimal("75.360", 2, "ARABIC_INDIC").replace('.', '٫'))
     }

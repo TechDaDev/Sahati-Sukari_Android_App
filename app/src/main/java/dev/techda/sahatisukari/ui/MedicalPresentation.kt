@@ -99,9 +99,9 @@ internal object MedicalPresentation {
             "NAUSEA" to "غثيان", "OTHER" to "عَرَض آخر",
         ),
         MedicalEnumField.SYMPTOM_SEVERITY to mapOf("MILD" to "خفيف", "MODERATE" to "متوسط", "SEVERE" to "شديد"),
-        MedicalEnumField.DAILY_FACTOR_TYPE to mapOf("ILLNESS" to "مرض", "STRESS" to "توتر", "TRAVEL" to "سفر", "MENSTRUATION" to "الدورة الشهرية", "OTHER" to "عامل آخر"),
+        MedicalEnumField.DAILY_FACTOR_TYPE to mapOf("ILLNESS" to "مرض", "STRESS" to "توتر نفسي", "TRAVEL" to "سفر", "MENSTRUATION" to "الدورة الشهرية", "OTHER" to "عامل آخر"),
         MedicalEnumField.LAB_TEST_TYPE to mapOf(
-            "HBA1C" to "الهيموغلوبين السكري (HbA1c)", "CREATININE" to "الكرياتينين", "EGFR" to "معدل الترشيح الكبيبي (eGFR)",
+            "HBA1C" to "السكر التراكمي (HbA1c)", "CREATININE" to "الكرياتينين", "EGFR" to "معدل الترشيح الكبيبي المقدر (eGFR)",
             "URINE_ACR" to "نسبة الألبومين إلى الكرياتينين في البول", "BLOOD_PRESSURE" to "ضغط الدم", "TOTAL_CHOLESTEROL" to "الكوليسترول الكلي",
             "LDL" to "الكوليسترول الضار (LDL)", "HDL" to "الكوليسترول النافع (HDL)", "TRIGLYCERIDES" to "الدهون الثلاثية", "OTHER" to "تحليل آخر",
         ),
@@ -133,7 +133,7 @@ internal object MedicalPresentation {
         "DINNER" to "العشاء", "SNACK" to "وجبة خفيفة", "LIGHT" to "خفيف", "MODERATE" to "متوسط", "VIGOROUS" to "شديد",
         "GOOD" to "جيد", "FAIR" to "متوسط", "POOR" to "ضعيف", "DIZZINESS" to "دوخة", "SWEATING" to "تعرق", "TREMOR" to "رجفة",
         "EXCESSIVE_THIRST" to "عطش شديد", "FATIGUE" to "إرهاق", "HEADACHE" to "صداع", "BLURRED_VISION" to "تشوش الرؤية",
-        "PALPITATIONS" to "خفقان", "NAUSEA" to "غثيان", "MILD" to "خفيف", "SEVERE" to "شديد", "ILLNESS" to "مرض", "STRESS" to "توتر",
+        "PALPITATIONS" to "خفقان", "NAUSEA" to "غثيان", "MILD" to "خفيف", "SEVERE" to "شديد", "ILLNESS" to "مرض", "STRESS" to "توتر نفسي",
         "TRAVEL" to "سفر", "MENSTRUATION" to "الدورة الشهرية", "INSULIN" to "إنسولين", "BIGUANIDE" to "بيغوانيد", "SULFONYLUREA" to "سلفونيل يوريا",
         "DPP4_INHIBITOR" to "مثبط DPP-4", "SGLT2_INHIBITOR" to "مثبط SGLT2", "GLP1_AGONIST" to "ناهض GLP-1", "TZD" to "ثيازوليدين ديون",
         "MEGLITINIDE" to "ميغليتينيد", "ALPHA_GLUCOSIDASE_INHIBITOR" to "مثبط ألفا غلوكوزيداز", "ANTIHYPERTENSIVE" to "دواء لضغط الدم",
@@ -143,7 +143,7 @@ internal object MedicalPresentation {
         "ONCE_DAILY" to "مرة يوميًا", "TWICE_DAILY" to "مرتين يوميًا", "THREE_TIMES_DAILY" to "ثلاث مرات يوميًا", "FOUR_TIMES_DAILY" to "أربع مرات يوميًا",
         "WITH_MEALS" to "مع الوجبات", "BEFORE_MEALS" to "قبل الوجبات", "AT_BEDTIME" to "قبل النوم", "AS_NEEDED" to "عند الحاجة", "WEEKLY" to "أسبوعيًا",
         "ACTIVE" to "نشط", "INACTIVE" to "متوقف", "TAKEN" to "تم تناولها", "MISSED" to "فاتت", "DELAYED" to "متأخرة", "OTHER" to "أخرى",
-        "HBA1C" to "الهيموغلوبين السكري (HbA1c)", "CREATININE" to "الكرياتينين", "EGFR" to "معدل الترشيح الكبيبي (eGFR)",
+        "HBA1C" to "السكر التراكمي (HbA1c)", "CREATININE" to "الكرياتينين", "EGFR" to "معدل الترشيح الكبيبي المقدر (eGFR)",
         "URINE_ACR" to "نسبة الألبومين إلى الكرياتينين في البول", "BLOOD_PRESSURE" to "ضغط الدم", "TOTAL_CHOLESTEROL" to "الكوليسترول الكلي",
         "LDL" to "الكوليسترول الضار (LDL)", "HDL" to "الكوليسترول النافع (HDL)", "TRIGLYCERIDES" to "الدهون الثلاثية",
     )
@@ -254,6 +254,17 @@ internal object MedicalPresentation {
     fun formatBmi(value: String?, numeralSystem: String? = null): String =
         formatDecimal(value, 1, numeralSystem).let { if (it == "—") it else "$it kg/m²" }
 
+    /** Computes display-only BMI using current profile height; historical height is not stored per weight record. */
+    fun calculateBmi(weightKg: String?, heightCm: String?, numeralSystem: String? = null): String {
+        val weight = weightKg?.trim()?.toBigDecimalOrNull()?.takeIf { it.signum() > 0 } ?: return "غير متاح"
+        val height = heightCm?.trim()?.toBigDecimalOrNull()?.takeIf { it.signum() > 0 } ?: return "غير متاح"
+        val heightMeters = height.divide(BigDecimal("100"), 8, RoundingMode.HALF_UP)
+        val heightSquared = heightMeters.multiply(heightMeters)
+        if (heightSquared.signum() <= 0) return "غير متاح"
+        val bmi = weight.divide(heightSquared, 8, RoundingMode.HALF_UP)
+        return formatBmi(bmi.toPlainString(), numeralSystem)
+    }
+
     fun formatCarbohydrates(value: String?, numeralSystem: String? = null): String =
         formatDecimal(value, 1, numeralSystem).let { if (it == "—") it else "$it g" }
 
@@ -293,7 +304,7 @@ internal object MedicalPresentation {
         if (value in 1..2) unit else "${localizedDigits(value.toString(), numeralSystem)} $unit"
 
     private fun hourUnit(value: Int): String = when (value) {
-        1 -> "ساعة واحدة"
+        1 -> "ساعة"
         2 -> "ساعتان"
         in 3..10 -> "ساعات"
         else -> "ساعة"
@@ -349,7 +360,7 @@ internal object MedicalPresentation {
         doseUnit: String? = null,
         strengthUnit: String? = null,
     ): MedicalFieldPresentation? {
-        if (key in setOf("id", "patientId", "medicationId", "createdAt", "updatedAt", "deletedAt", "standardizedValueMgdl")) return null
+        if (key in setOf("id", "patientId", "medicationId", "createdAt", "updatedAt", "deletedAt", "recordedAt", "standardizedValueMgdl", "enteredByPatient")) return null
         if (key.endsWith("Id")) return null
         val raw = value?.takeIf(String::isNotBlank) ?: return null
         val label = fieldLabels[key] ?: "معلومات إضافية"

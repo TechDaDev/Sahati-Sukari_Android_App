@@ -26,6 +26,7 @@ data class PatientSectionState(
     val data: JsonObject? = null,
     val patientTimezone: String? = null,
     val numeralSystem: String? = null,
+    val patientHeightCm: String? = null,
     val relatedEndpoint: String = "",
     val relatedData: JsonObject? = null,
     val profileWeights: JsonObject? = null,
@@ -35,6 +36,13 @@ data class PatientSectionState(
     val busy: Boolean = false,
     val error: String? = null,
     val notice: String? = null,
+)
+
+private data class PatientSectionLoad(
+    val data: JsonObject,
+    val timezone: String?,
+    val numeralSystem: String?,
+    val heightCm: String?,
 )
 
 @HiltViewModel
@@ -56,8 +64,13 @@ class PatientSectionViewModel @Inject constructor(private val api: PatientApi, p
                     if (profileResponse.isSuccessful) profileResponse.body()?.data else null
                 }.getOrNull()
                 val preferences = profile?.get("profile")?.let { runCatching { it.jsonObject }.getOrNull() } ?: profile
-                Triple(data, preferences?.get("timezone")?.jsonPrimitive?.contentOrNull, preferences?.get("numeralSystem")?.jsonPrimitive?.contentOrNull)
-            }.onSuccess { (data, timezone, numeralSystem) -> _state.value = _state.value.copy(endpoint = endpoint, data = data, patientTimezone = timezone, numeralSystem = numeralSystem, loading = false, error = null, notice = notice) }
+                PatientSectionLoad(
+                    data,
+                    preferences?.get("timezone")?.jsonPrimitive?.contentOrNull,
+                    preferences?.get("numeralSystem")?.jsonPrimitive?.contentOrNull,
+                    preferences?.get("heightCm")?.jsonPrimitive?.contentOrNull,
+                )
+            }.onSuccess { loaded -> _state.value = _state.value.copy(endpoint = endpoint, data = loaded.data, patientTimezone = loaded.timezone, numeralSystem = loaded.numeralSystem, patientHeightCm = loaded.heightCm, loading = false, error = null, notice = notice) }
                 .onFailure { _state.value = _state.value.copy(endpoint = endpoint, loading = false, error = it.message ?: "تعذر تحميل البيانات.", notice = notice) }
         }
     }

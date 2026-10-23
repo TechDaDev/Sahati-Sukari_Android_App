@@ -109,7 +109,6 @@ private fun SectionContent(section: Int, state: PatientSectionState, modifier: M
                 Button(onClick = { profileEditing = true }, modifier = Modifier.fillMaxWidth()) { Text("تعديل الملف الصحي") }
                 ProfileContent(
                     state.data,
-                    state.profileWeights,
                     state.profileLabs,
                     state.profileHistoryLoading,
                     state.busy,
@@ -155,8 +154,8 @@ private fun JournalScreen(modifier: Modifier, viewModel: PatientSectionViewModel
         if (state.loading) CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally))
         else {
             Button(onClick = { adding = !adding }, modifier = Modifier.fillMaxWidth()) { Text(if (adding) "إلغاء" else "إضافة سجل") }
-            if (adding) RecordForm(endpoint, state.busy) { body -> viewModel.save(endpoint, body); adding = false }
-            RecordList(endpoint, state.data, onDelete = viewModel::delete)
+            if (adding) RecordForm(endpoint, state.busy, timeZoneId = state.patientTimezone) { body -> viewModel.save(endpoint, body); adding = false }
+            RecordList(endpoint, state.data, onDelete = viewModel::delete, timeZoneId = state.patientTimezone, numeralSystem = state.numeralSystem, patientHeightCm = state.patientHeightCm)
             PaginationAction(state.data, state.busy, viewModel::loadMore)
             OutlinedButton(onClick = viewModel::reload, modifier = Modifier.fillMaxWidth()) { Text("تحديث") }
         }
@@ -171,15 +170,26 @@ private fun PaginationAction(data: JsonObject?, busy: Boolean, onLoadMore: () ->
 
 @Composable
 private fun ProfileContent(
-    data: JsonObject?, weights: JsonObject?, labs: JsonObject?, historyLoading: Boolean, busy: Boolean,
+    data: JsonObject?, labs: JsonObject?, historyLoading: Boolean, busy: Boolean,
     onReload: () -> Unit, onSave: (String, JsonObject) -> Unit,
     onLoadMore: (String) -> Unit,
 ) {
-    var addingWeight by remember { mutableStateOf(false) }
     var addingLab by remember { mutableStateOf(false) }
     HealthProfileContent(healthProfilePresentation(data), onReload)
-    ProfileHistorySection("سجل الوزن", "weight", weights, historyLoading, busy, addingWeight, { addingWeight = it }, onSave, onLoadMore)
-    ProfileHistorySection("التحاليل المخبرية", "labs", labs, historyLoading, busy, addingLab, { addingLab = it }, onSave, onLoadMore)
+    healthProfileHistorySections().forEach { section ->
+        val adding = section.endpoint == "labs" && addingLab
+        ProfileHistorySection(
+            section.title,
+            section.endpoint,
+            if (section.endpoint == "labs") labs else null,
+            historyLoading,
+            busy,
+            adding,
+            { enabled -> if (section.endpoint == "labs") addingLab = enabled },
+            onSave,
+            onLoadMore,
+        )
+    }
 }
 
 @Composable
@@ -204,7 +214,14 @@ private fun ProfileHistorySection(
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp), horizontalAlignment = Alignment.End) {
                         Text(record.title, Modifier.fillMaxWidth(), style = MaterialTheme.typography.titleSmall, textAlign = TextAlign.Start)
                         record.fields.forEach { field ->
-                            Text("${field.label}: ${field.value}", Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Start)
+                            MedicalLabelValueRow(
+                                label = field.label,
+                                value = field.value,
+                                labelWeight = 0.36f,
+                                valueWeight = 0.64f,
+                                labelStyle = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                                valueStyle = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                            )
                         }
                     }
                 }
@@ -327,6 +344,7 @@ private fun RecordList(
     onEdit: ((String, JsonObject) -> Unit)? = null,
     timeZoneId: String? = null,
     numeralSystem: String? = null,
+    patientHeightCm: String? = null,
 ) {
     val items = (data?.get("items") as? JsonArray).orEmpty()
     if (items.isEmpty()) {
@@ -348,14 +366,16 @@ private fun RecordList(
         )
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp), horizontalAlignment = Alignment.End) {
-                MedicalValueText(recordTitle(endpoint, record), style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
-                recordPresentationFields(endpoint, record, timeZoneId, numeralSystem).forEach { field ->
-                        MedicalLabelValueRow(
-                            label = field.label,
-                            value = field.value,
-                            labelStyle = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
-                            valueStyle = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
-                        )
+                MedicalValueText(recordTitle(endpoint, record, numeralSystem), style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
+                recordPresentationFields(endpoint, record, timeZoneId, numeralSystem, patientHeightCm).forEach { field ->
+                    MedicalLabelValueRow(
+                        label = field.label,
+                        value = field.value,
+                        labelWeight = 0.36f,
+                        valueWeight = 0.64f,
+                        labelStyle = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                        valueStyle = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                    )
                 }
                 if (id != null) {
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -485,28 +505,27 @@ private fun buildBody(specs: List<FieldSpec>, values: Map<String, String>): Json
     }
 }
 
-private fun recordTitle(endpoint: String, record: JsonObject): String {
+internal fun recordTitle(endpoint: String, record: JsonObject, numeralSystem: String? = null): String {
     if (endpoint == "glucose") return "قراءة السكر"
     if (endpoint == "administrations") return "جرعة مسجلة"
+    if (endpoint == "meals") return "وجبة مسجلة"
+    if (endpoint == "activities") return "نشاط مسجل"
+    if (endpoint == "sleep") return "سجل النوم"
+    if (endpoint == "symptoms") return "عَرَض مسجل"
+    if (endpoint == "factors") return "عامل يومي"
+    if (endpoint == "labs") return "تحليل مسجل"
     if (endpoint == "medications") {
         return record["medicationName"]?.jsonPrimitive?.contentOrNull
             ?: record["medication"]?.let { runCatching { it.jsonObject["medicationName"]?.jsonPrimitive?.contentOrNull }.getOrNull() }
             ?: "دواء"
     }
-    val keys = when (endpoint) {
-        "meals" -> listOf("mealType", "description")
-        "activities" -> listOf("activityType")
-        "sleep" -> listOf("durationMinutes")
-        "symptoms" -> listOf("symptomType")
-        "weight" -> listOf("weightKg")
-        else -> listOf("testType")
-    }
+    val keys = if (endpoint == "weight") listOf("weightKg") else emptyList()
     return keys.mapNotNull { key ->
         val raw = record[key]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
         if (key == "glucoseValue") {
-            MedicalPresentation.formatGlucose(raw, record["glucoseUnit"]?.jsonPrimitive?.contentOrNull)
+            MedicalPresentation.formatGlucose(raw, record["glucoseUnit"]?.jsonPrimitive?.contentOrNull, numeralSystem)
         } else {
-            MedicalPresentation.presentRecordField(key, raw)?.value
+            MedicalPresentation.presentRecordField(key, raw, numeralSystem = numeralSystem)?.value
         }
     }.joinToString(" — ").ifBlank { "سجل" }
 }
@@ -517,6 +536,7 @@ internal fun recordPresentationFields(
     record: JsonObject,
     timeZoneId: String? = null,
     numeralSystem: String? = null,
+    patientHeightCm: String? = null,
 ): List<MedicalFieldPresentation> {
     val recordData = if (endpoint == "administrations") {
         record["administration"]?.let { runCatching { it.jsonObject }.getOrNull() } ?: record
@@ -525,9 +545,20 @@ internal fun recordPresentationFields(
         "glucose" -> listOf("glucoseValue", "measurementContext", "measurementDatetime", "source", "minutesAfterMeal", "symptomsText", "notes")
         "medications" -> listOf("category", "status", "strength", "prescribedDose", "route", "frequency", "usualTime", "startDate", "endDate", "prescriberName", "insulinFormulation", "notes")
         "administrations" -> listOf("actualDose", "administrationDatetime", "status", "notes")
+        "meals" -> listOf("mealType", "description", "carbohydrateGrams", "mealDate", "mealTime", "notes")
+        "activities" -> listOf("activityType", "durationMinutes", "intensity", "activityDate", "activityTime", "notes")
+        "sleep" -> listOf("durationMinutes", "quality", "sleepDate", "notes")
+        "symptoms" -> listOf("symptomType", "severity", "symptomDate", "symptomTime", "notes")
+        "factors" -> listOf("factorType", "description", "factorDate", "factorTime")
+        "weight" -> listOf("measurementDate", "notes")
+        "labs" -> listOf("testType", "value", "valueSecondary", "unit", "testDate", "referenceRange", "notes")
         else -> emptyList()
     }
-    val hiddenOrCombined = setOf("glucoseUnit", "doseUnit", "strengthUnit", "standardizedValueMgdl") + if (endpoint == "medications") setOf("medicationName") else emptySet()
+    val hiddenOrCombined = setOf("glucoseUnit", "doseUnit", "strengthUnit", "standardizedValueMgdl") + when (endpoint) {
+        "medications" -> setOf("medicationName")
+        "weight" -> setOf("weightKg")
+        else -> emptySet()
+    }
     val result = mutableListOf<MedicalFieldPresentation>()
     fun scalar(element: JsonElement?): String? = element?.let { runCatching { it.jsonPrimitive.contentOrNull }.getOrNull() }
     fun append(key: String, element: JsonElement?, doseUnit: String? = null, strengthUnit: String? = null) {
@@ -548,9 +579,18 @@ internal fun recordPresentationFields(
         }
         medicationName?.takeIf(String::isNotBlank)?.let { result += MedicalFieldPresentation("الدواء", it) }
     }
+    if (endpoint == "weight") {
+        result += MedicalFieldPresentation("مؤشر كتلة الجسم (BMI)", MedicalPresentation.calculateBmi(scalar(recordData["weightKg"]), patientHeightCm, numeralSystem))
+    }
     orderedKeys.forEach { key ->
         val unit = scalar(recordData["doseUnit"])
         val strengthUnit = scalar(recordData["strengthUnit"])
+        val testType = scalar(recordData["testType"])
+        if (endpoint == "labs" && key == "value" && testType == "BLOOD_PRESSURE") {
+            result += MedicalFieldPresentation("النتيجة", MedicalPresentation.formatBloodPressure(scalar(recordData["value"]), scalar(recordData["valueSecondary"]), numeralSystem))
+            return@forEach
+        }
+        if (endpoint == "labs" && testType == "BLOOD_PRESSURE" && key in setOf("valueSecondary", "unit")) return@forEach
         append(key, recordData[key], doseUnit = unit, strengthUnit = strengthUnit)
     }
     recordData.keys.filter { it !in orderedKeys && it !in hiddenOrCombined }.forEach { key ->
