@@ -15,54 +15,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 internal data class HealthProfileLine(val label: String, val value: String)
-internal data class HealthHistoryRecord(val title: String, val fields: List<HealthProfileLine>)
-internal data class HealthProfileHistorySection(val endpoint: String, val title: String)
-
-internal fun healthProfileHistorySections(): List<HealthProfileHistorySection> =
-    listOf(HealthProfileHistorySection("labs", "التحاليل المخبرية"))
-
-internal fun healthHistoryPresentation(endpoint: String, response: JsonObject?): List<HealthHistoryRecord> {
-    if (endpoint !in setOf("weight", "labs")) return emptyList()
-    val rows = response?.get("items") as? JsonArray ?: return emptyList()
-    return rows.mapNotNull { element ->
-        val row = runCatching { element.jsonObject }.getOrNull() ?: return@mapNotNull null
-        fun value(key: String) = row[key]?.jsonPrimitive?.contentOrNull?.takeIf(String::isNotBlank)
-        val fields = buildList {
-            if (endpoint == "weight") {
-                value("weightKg")?.let { add(HealthProfileLine("الوزن", MedicalPresentation.formatWeight(it))) }
-                value("measurementDate")?.let { add(HealthProfileLine("تاريخ القياس", formatProfileDate(it, null))) }
-                value("notes")?.let { add(HealthProfileLine("ملاحظات", it)) }
-            } else {
-                val testType = value("testType")
-                testType?.let { add(HealthProfileLine("نوع التحليل", MedicalPresentation.label(MedicalEnumField.LAB_TEST_TYPE, it))) }
-                val primaryValue = value("value")
-                val secondaryValue = value("valueSecondary")
-                if (testType == "BLOOD_PRESSURE" && primaryValue != null && secondaryValue != null) {
-                    add(HealthProfileLine("النتيجة", MedicalPresentation.formatBloodPressure(primaryValue, secondaryValue)))
-                } else {
-                    primaryValue?.let { add(HealthProfileLine("النتيجة", MedicalPresentation.formatLabValue(it))) }
-                }
-                if (testType != "BLOOD_PRESSURE") secondaryValue?.let { add(HealthProfileLine("قيمة إضافية", MedicalPresentation.formatLabValue(it))) }
-                value("unit")?.let { add(HealthProfileLine("الوحدة", it)) }
-                value("testDate")?.let { add(HealthProfileLine("تاريخ التحليل", formatProfileDate(it, null))) }
-                value("referenceRange")?.let { add(HealthProfileLine("المدى المرجعي", it)) }
-                value("notes")?.let { add(HealthProfileLine("ملاحظات", it)) }
-            }
-        }
-        if (fields.isEmpty()) return@mapNotNull null
-        HealthHistoryRecord(fields.first().value, fields)
-    }
-}
-
 internal data class HealthConditionLine(
     val typeCode: String,
     val statusCode: String,

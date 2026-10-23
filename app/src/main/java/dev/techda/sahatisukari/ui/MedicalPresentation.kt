@@ -173,17 +173,17 @@ internal object MedicalPresentation {
         "preferredGlucoseUnit" to "وحدة السكر المفضلة", "numeralSystem" to "نظام الأرقام", "testType" to "نوع التحليل", "value" to "النتيجة",
         "valueSecondary" to "قيمة إضافية", "unit" to "الوحدة", "testDate" to "تاريخ التحليل", "measurementDate" to "تاريخ القياس", "weightKg" to "الوزن",
         "notes" to "ملاحظات", "referenceRange" to "المدى المرجعي", "glucoseValue" to "قيمة السكر", "glucoseUnit" to "وحدة السكر",
-        "measurementDatetime" to "تاريخ ووقت القياس", "measurementDateTime" to "تاريخ ووقت القياس", "measurementTime" to "وقت القياس",
+        "measurementDatetime" to "التاريخ والوقت", "measurementDateTime" to "التاريخ والوقت", "measurementTime" to "وقت القياس",
         "measurementContext" to "سياق القياس", "minutesAfterMeal" to "الدقائق بعد الوجبة", "source" to "مصدر القياس", "symptoms" to "الأعراض",
         "medicationName" to "اسم الدواء", "category" to "فئة الدواء", "strength" to "تركيز الدواء", "strengthUnit" to "وحدة التركيز",
         "prescribedDose" to "الجرعة الموصوفة", "actualDose" to "الجرعة المسجلة", "doseUnit" to "وحدة الجرعة", "route" to "طريقة الاستخدام",
         "frequency" to "التكرار", "usualTime" to "الوقت المعتاد", "startDate" to "تاريخ البدء", "endDate" to "تاريخ الانتهاء",
         "prescriberName" to "اسم الواصف", "insulinFormulation" to "تركيبة الإنسولين", "status" to "الحالة", "administrationDatetime" to "تاريخ ووقت الجرعة",
         "symptomsText" to "الأعراض", "strengthUnit" to "وحدة التركيز",
-        "administrationDateTime" to "تاريخ ووقت الجرعة", "administrationDate" to "تاريخ الجرعة", "administrationTime" to "وقت الجرعة",
-        "mealType" to "نوع الوجبة", "description" to "الوصف", "carbohydrateGrams" to "الكربوهيدرات", "mealDate" to "تاريخ الوجبة", "mealTime" to "وقت الوجبة",
-        "activityType" to "نوع النشاط", "durationMinutes" to "المدة", "intensity" to "الشدة", "activityDate" to "تاريخ النشاط", "activityTime" to "وقت النشاط",
-        "sleepDate" to "تاريخ النوم", "quality" to "جودة النوم", "symptomType" to "العَرَض", "severity" to "الشدة", "symptomDate" to "تاريخ العَرَض",
+        "administrationDateTime" to "التاريخ والوقت", "administrationDate" to "تاريخ الجرعة", "administrationTime" to "وقت الجرعة",
+        "mealType" to "نوع الوجبة", "description" to "الوصف", "carbohydrateGrams" to "الكربوهيدرات", "mealDate" to "تاريخ الوجبة", "mealTime" to "وقت الوجبة", "mealDatetime" to "التاريخ والوقت",
+        "activityType" to "نوع النشاط", "durationMinutes" to "المدة", "intensity" to "الشدة", "activityDate" to "تاريخ النشاط", "activityTime" to "وقت النشاط", "activityDatetime" to "التاريخ والوقت",
+        "sleepDate" to "تاريخ النوم", "quality" to "جودة النوم", "symptomType" to "العَرَض", "severity" to "الشدة", "symptomDate" to "تاريخ العَرَض", "symptomDatetime" to "التاريخ والوقت",
         "symptomTime" to "وقت العَرَض", "factorType" to "العامل", "factorDate" to "تاريخ العامل", "factorTime" to "وقت العامل",
         "emailVerified" to "حالة البريد الإلكتروني", "phoneVerified" to "حالة الهاتف", "allergies" to "الحساسية", "smokingStatus" to "حالة التدخين",
         "familyHistoryDiabetes" to "تاريخ عائلي للسكري", "healthNotes" to "معلومات صحية إضافية", "bmi" to "مؤشر كتلة الجسم",
@@ -230,6 +230,18 @@ internal object MedicalPresentation {
             "MMOL_L" -> "${formatDecimal(parsed.toPlainString(), 1, numeralSystem)} mmol/L"
             else -> UNKNOWN_ENUM
         }
+    }
+
+    /** Record-card variant preserves the exact supplied measurement precision. */
+    fun formatGlucoseRecord(value: String?, unit: String?, numeralSystem: String? = null): String {
+        val parsed = value?.trim()?.toBigDecimalOrNull() ?: return "—"
+        val number = localizedDigits(parsed.stripTrailingZeros().toPlainString(), numeralSystem)
+        val unitLabel = when (unit) {
+            "MG_DL" -> "mg/dL"
+            "MMOL_L" -> "mmol/L"
+            else -> return number
+        }
+        return "$number $unitLabel"
     }
 
     /** Converts a standardized mg/dL value only when presenting in the configured mmol/L unit. */
@@ -425,7 +437,7 @@ internal object MedicalPresentation {
 
     private val dateOnlyFields = setOf("dateOfBirth", "diagnosisDate", "measurementDate", "testDate", "startDate", "endDate", "mealDate", "activityDate", "sleepDate", "symptomDate", "factorDate", "administrationDate")
     private val timeOnlyFields = setOf("measurementTime", "usualTime", "mealTime", "activityTime", "symptomTime", "factorTime", "administrationTime")
-    private val instantFields = setOf("measurementDatetime", "measurementDateTime", "administrationDatetime", "administrationDateTime", "recordedAt", "lastUsedAt")
+    private val instantFields = setOf("measurementDatetime", "measurementDateTime", "administrationDatetime", "administrationDateTime", "mealDatetime", "activityDatetime", "symptomDatetime", "recordedAt", "lastUsedAt")
 }
 
 internal fun profileMedicalEnumLabel(field: String, code: String?): String = MedicalPresentation.profileEnumLabel(field, code)

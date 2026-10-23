@@ -9,18 +9,16 @@ import org.junit.Test
 
 class DailyJournalPresentationTest {
     @Test
-    fun mealCardShowsTypeDescriptionCarbsLocalDateAndNotes() {
+    fun mealCardUsesLocalizedTypeAndDescriptionAsHeaderThenShowsOnlyDetails() {
         val record = Json.parseToJsonElement(
             """{"mealType":"DINNER","description":"شوربة عدس with bread","carbohydrateGrams":"30.500","mealDate":"2026-10-23","mealTime":"19:05:00","notes":"وجبة منزلية","id":"synthetic-id"}""",
         ).jsonObject
         val fields = recordPresentationFields("meals", record, "Asia/Baghdad", "LATIN")
-        assertEquals(listOf("نوع الوجبة", "الوصف", "الكربوهيدرات", "تاريخ الوجبة", "وقت الوجبة", "ملاحظات"), fields.map { it.label })
-        assertEquals("العشاء", fields[0].value)
-        assertEquals("شوربة عدس with bread", fields[1].value)
-        assertEquals("30.5 g", fields[2].value)
-        assertEquals("23/10/2026", fields[3].value)
-        assertEquals("7:05 مساءً", fields[4].value)
-        assertEquals("وجبة منزلية", fields[5].value)
+        assertEquals("العشاء — شوربة عدس with bread", recordTitle("meals", record))
+        assertEquals(listOf("الكربوهيدرات", "التاريخ والوقت", "ملاحظات"), fields.map { it.label })
+        assertEquals("30.5 g", fields[0].value)
+        assertEquals("23/10/2026 – 7:05 مساءً", fields[1].value)
+        assertEquals("وجبة منزلية", fields[2].value)
         assertFalse(fields.any { it.label == "mealType" || it.label == "carbohydrateGrams" })
     }
 
@@ -32,18 +30,19 @@ class DailyJournalPresentationTest {
         val activityFields = recordPresentationFields("activities", activity, "Asia/Baghdad")
         assertEquals("42 دقيقة", activityFields.first { it.label == "المدة" }.value)
         assertEquals("متوسط", activityFields.first { it.label == "الشدة" }.value)
-        assertEquals("23/10/2026", activityFields.first { it.label == "تاريخ النشاط" }.value)
-        assertEquals("8:15 صباحًا", activityFields.first { it.label == "وقت النشاط" }.value)
+        assertEquals("Walking", recordTitle("activities", activity))
+        assertEquals("23/10/2026 – 8:15 صباحًا", activityFields.first { it.label == "التاريخ والوقت" }.value)
         assertEquals("مشي صباحي", activityFields.last().value)
 
         val sleep = Json.parseToJsonElement(
             """{"durationMinutes":385,"quality":"POOR","sleepDate":"2026-10-22","notes":"استيقاظ مرة واحدة"}""",
         ).jsonObject
         val sleepFields = recordPresentationFields("sleep", sleep, "Asia/Baghdad")
-        assertEquals("6 ساعات و 25 دقيقة", sleepFields[0].value)
-        assertEquals("ضعيف", sleepFields[1].value)
-        assertEquals("22/10/2026", sleepFields[2].value)
-        assertEquals("استيقاظ مرة واحدة", sleepFields[3].value)
+        assertEquals("النوم — 6 ساعات و 25 دقيقة", recordTitle("sleep", sleep))
+        assertEquals(listOf("جودة النوم", "تاريخ النوم", "ملاحظات"), sleepFields.map { it.label })
+        assertEquals("ضعيف", sleepFields[0].value)
+        assertEquals("22/10/2026", sleepFields[1].value)
+        assertEquals("استيقاظ مرة واحدة", sleepFields[2].value)
     }
 
     @Test
@@ -52,19 +51,17 @@ class DailyJournalPresentationTest {
             """{"symptomType":"EXCESSIVE_THIRST","severity":"MODERATE","symptomDate":"2026-10-23","symptomTime":"14:30:00","notes":"بعد الظهر"}""",
         ).jsonObject
         val symptoms = recordPresentationFields("symptoms", symptom, "Asia/Baghdad")
-        assertEquals("عطش شديد", symptoms[0].value)
-        assertEquals("متوسط", symptoms[1].value)
-        assertEquals("23/10/2026", symptoms.first { it.label == "تاريخ العَرَض" }.value)
-        assertEquals("2:30 مساءً", symptoms.first { it.label == "وقت العَرَض" }.value)
+        assertEquals("عطش شديد", recordTitle("symptoms", symptom))
+        assertEquals("متوسط", symptoms[0].value)
+        assertEquals("23/10/2026 – 2:30 مساءً", symptoms.first { it.label == "التاريخ والوقت" }.value)
 
         val factor = Json.parseToJsonElement(
             """{"factorType":"STRESS","description":"ضغط العمل","factorDate":"2026-10-23","factorTime":"10:00:00"}""",
         ).jsonObject
         val factors = recordPresentationFields("factors", factor, "Asia/Baghdad")
-        assertEquals("توتر نفسي", factors[0].value)
-        assertEquals("ضغط العمل", factors[1].value)
-        assertEquals("23/10/2026", factors.first { it.label == "تاريخ العامل" }.value)
-        assertEquals("10:00 صباحًا", factors.first { it.label == "وقت العامل" }.value)
+        assertEquals("توتر نفسي", recordTitle("factors", factor))
+        assertEquals("ضغط العمل", factors[0].value)
+        assertEquals("23/10/2026 – 10:00 صباحًا", factors.first { it.label == "التاريخ والوقت" }.value)
     }
 
     @Test
@@ -73,7 +70,7 @@ class DailyJournalPresentationTest {
             """{"testType":"HBA1C","value":"6.200","unit":"%","testDate":"2026-10-01","referenceRange":"4.0-5.6%","notes":"مختبر"}""",
         ).jsonObject
         val labFields = recordPresentationFields("labs", hba1c, "Asia/Baghdad")
-        assertEquals("السكر التراكمي (HbA1c)", labFields.first { it.label == "نوع التحليل" }.value)
+        assertEquals("السكر التراكمي (HbA1c)", recordTitle("labs", hba1c))
         assertEquals("6.2", labFields.first { it.label == "النتيجة" }.value)
         assertEquals("%", labFields.first { it.label == "الوحدة" }.value)
         assertEquals("01/10/2026", labFields.first { it.label == "تاريخ التحليل" }.value)
@@ -112,10 +109,12 @@ class DailyJournalPresentationTest {
     }
 
     @Test
-    fun healthProfileKeepsLabsHistoryButNoLongerOffersDuplicateWeightHistory() {
-        assertEquals(listOf("labs"), healthProfileHistorySections().map { it.endpoint })
-        assertTrue(healthProfileHistorySections().any { it.title == "التحاليل المخبرية" })
-        assertFalse(healthProfileHistorySections().any { it.endpoint == "weight" })
+    fun journalHasRequiredArabicSectionNamesIncludingLaboratoryHistory() {
+        assertEquals(
+            listOf("الوجبات", "النشاط البدني", "النوم", "الأعراض", "العوامل اليومية", "الوزن", "التحاليل المختبرية"),
+            journalSectionChoices().map { it.second },
+        )
+        assertEquals(listOf("meals", "activities", "sleep", "symptoms", "factors", "weight", "labs"), journalSectionChoices().map { it.first })
     }
 
     @Test
@@ -124,11 +123,36 @@ class DailyJournalPresentationTest {
             """{"activityType":"Cycling","durationMinutes":90,"intensity":"FUTURE_LEVEL","activityDate":"2026-10-23","activityTime":"08:15:00","recordedAt":"2026-10-23T10:00:00Z","createdAt":"2026-10-23T10:00:00Z","patientId":"synthetic-patient-id"}""",
         ).jsonObject
         val fields = recordPresentationFields("activities", record, "Asia/Baghdad")
+        assertEquals("Cycling", recordTitle("activities", record))
         assertEquals("ساعة و 30 دقيقة", fields.first { it.label == "المدة" }.value)
         assertEquals("قيمة محفوظة غير معروفة", fields.first { it.label == "الشدة" }.value)
         val patientFacing = fields.joinToString(" ") { "${it.label} ${it.value}" }
         listOf("activityType", "durationMinutes", "activityDate", "activityTime", "recordedAt", "createdAt", "patientId", "FUTURE_LEVEL").forEach {
             assertFalse("raw value leaked: $it", patientFacing.contains(it))
         }
+        assertFalse(fields.any { it.label == "معلومات إضافية" })
+    }
+
+    @Test
+    fun timestampAliasesArePatientLocalAndNotDuplicatedOrRaw() {
+        val meal = Json.parseToJsonElement("""{"mealType":"DINNER","description":"شوربة","mealDatetime":"2026-10-23T17:10:00Z","mealDate":"2026-10-23","mealTime":"20:10:00","createdAt":"2026-10-23T17:20:00Z"}""").jsonObject
+        val fields = recordPresentationFields("meals", meal, "Asia/Baghdad")
+        assertEquals(listOf("التاريخ والوقت"), fields.map { it.label })
+        assertEquals("23/10/2026 – 8:10 مساءً", fields.single().value)
+
+        val symptom = Json.parseToJsonElement("""{"symptomType":"EXCESSIVE_THIRST","severity":"MILD","symptomDatetime":"2026-10-23T17:10:00+00:00","createdAt":"2026-10-23T17:20:00Z"}""").jsonObject
+        val symptomFields = recordPresentationFields("symptoms", symptom, "Asia/Baghdad")
+        assertEquals(listOf("الشدة", "التاريخ والوقت"), symptomFields.map { it.label })
+        assertEquals("23/10/2026 – 8:10 مساءً", symptomFields.last().value)
+        assertFalse(symptomFields.any { it.value.contains("2026-") })
+    }
+
+    @Test
+    fun optionalEmptyFieldsAreOmittedAndMeaningfulFreeTextTitlesArePreserved() {
+        val record = Json.parseToJsonElement("""{"activityType":"مشي سريع","durationMinutes":42,"intensity":"MODERATE","activityDatetime":"2026-10-23T06:00:00Z","notes":" "}""").jsonObject
+        assertEquals("مشي سريع", recordTitle("activities", record))
+        val fields = recordPresentationFields("activities", record, "Asia/Baghdad")
+        assertEquals(listOf("المدة", "الشدة", "التاريخ والوقت"), fields.map { it.label })
+        assertFalse(fields.any { it.value.isBlank() || it.label == "معلومات إضافية" })
     }
 }

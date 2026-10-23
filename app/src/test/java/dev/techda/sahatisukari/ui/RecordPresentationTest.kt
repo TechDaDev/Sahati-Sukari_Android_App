@@ -20,15 +20,16 @@ class RecordPresentationTest {
         ).jsonObject
 
         val fields = recordPresentationFields("glucose", record, "Asia/Baghdad", "LATIN")
+        assertEquals("قراءة السكر", recordTitle("glucose", record))
+        assertEquals("104.35 mg/dL", recordHeadlineValue("glucose", record))
         assertEquals(
-            listOf("قيمة السكر", "سياق القياس", "تاريخ ووقت القياس", "مصدر القياس", "الدقائق بعد الوجبة", "الأعراض", "ملاحظات"),
+            listOf("سياق القياس", "التاريخ والوقت", "مصدر القياس", "الدقائق بعد الوجبة", "الأعراض", "ملاحظات"),
             fields.map { it.label },
         )
-        assertEquals("104.35 mg/dL", fields[0].value)
-        assertEquals("بعد الإفطار", fields[1].value)
-        assertEquals("23/10/2026 – 1:34 مساءً", fields[2].value)
-        assertEquals("جهاز قياس من الإصبع", fields[3].value)
-        assertEquals("دوخة بعد الطعام", fields[5].value)
+        assertEquals("بعد الإفطار", fields[0].value)
+        assertEquals("23/10/2026 – 1:34 مساءً", fields[1].value)
+        assertEquals("جهاز قياس من الإصبع", fields[2].value)
+        assertEquals("دوخة بعد الطعام", fields[4].value)
         assertTrue(fields.none { it.label in setOf("glucoseValue", "glucoseUnit", "measurementContext", "source", "symptomsText") })
         assertTrue(fields.none { it.value.contains("internal-id") || it.value.contains("patient-id") || it.value.contains("104.350") })
     }
@@ -41,9 +42,22 @@ class RecordPresentationTest {
 
         val fields = recordPresentationFields("glucose", record, "America/New_York", "ARABIC_INDIC")
         assertFalse(fields.any { it.label == "سياق القياس" })
-        assertEquals("٨٫٢ mmol/L", fields.first().value.replace('.', '٫'))
-        assertEquals("٢٣/١٠/٢٠٢٦ – ٦:٣٤ صباحًا", fields.first { it.label == "تاريخ ووقت القياس" }.value)
+        assertEquals("٨٫٢ mmol/L", recordHeadlineValue("glucose", record, "ARABIC_INDIC")?.replace('.', '٫'))
+        assertEquals("٢٣/١٠/٢٠٢٦ – ٦:٣٤ صباحًا", fields.first { it.label == "التاريخ والوقت" }.value)
         assertEquals("مصدر آخر", fields.first { it.label == "مصدر القياس" }.value)
+        assertFalse(fields.any { it.value.contains("8.2") || it.label.contains("قيمة السكر") })
+    }
+
+    @Test
+    fun glucoseProductionAliasesKeepRawPrecisionAndDoNotRenderGenericApiExtras() {
+        val record = Json.parseToJsonElement(
+            """{"value":"104.3570","unit":"MG_DL","standardizedValueMgdl":"104.3570","displayValue":"104 mg/dL","measurementDatetime":"2026-10-23T17:10:00+00:00","createdAt":"2026-10-23T17:10:01Z","id":"synthetic-id","backendFutureField":"secret"}""",
+        ).jsonObject
+        assertEquals("104.357 mg/dL", recordHeadlineValue("glucose", record))
+        val fields = recordPresentationFields("glucose", record, "Asia/Baghdad")
+        assertEquals("23/10/2026 – 8:10 مساءً", fields.single().value)
+        assertEquals(listOf("التاريخ والوقت"), fields.map { it.label })
+        assertFalse(fields.any { it.value.contains("2026-") || it.label == "معلومات إضافية" })
     }
 
     @Test

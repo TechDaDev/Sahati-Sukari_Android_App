@@ -107,7 +107,7 @@ class MedicalPresentationTest {
         assertEquals("معلومات إضافية", futureFreeText?.label)
         assertEquals("ملاحظة سريرية محفوظة", futureFreeText?.value)
         val date = MedicalPresentation.presentRecordField("measurementDatetime", "2026-10-23T10:34:36.345Z")
-        assertEquals("تاريخ ووقت القياس", date?.label)
+        assertEquals("التاريخ والوقت", date?.label)
         assertEquals("23/10/2026 – 1:34 مساءً", date?.value)
     }
 
