@@ -15,6 +15,14 @@ data class UpdateManifest(
     val releaseNotes: String,
 )
 
+object UpdateStartupPolicy {
+    fun shouldCheck(authIsChecking: Boolean, alreadyCheckedThisLaunch: Boolean): Boolean =
+        !authIsChecking && !alreadyCheckedThisLaunch
+
+    fun shouldShowPrompt(available: Boolean, dismissedVersionCode: Long?, availableVersionCode: Long): Boolean =
+        available && dismissedVersionCode != availableVersionCode
+}
+
 internal object UpdateManifestValidator {
     const val MANIFEST_URL = "https://download.techda.dev/updates.json"
     const val APK_URL = "https://download.techda.dev/SahatiSukari.apk"

@@ -88,29 +88,48 @@ class UpdateRepository internal constructor(
         onProgress: (downloadedBytes: Long, totalBytes: Long) -> Unit = { _, _ -> },
     ): File = withContext(Dispatchers.IO) {
         downloadMutex.withLock {
-            val validatedManifest = UpdateManifestValidator.validate(manifest)
-            val appContext = context.applicationContext
-            require(validatedManifest.versionCode > installedVersionCode(appContext)) { "أنت تستخدم أحدث إصدار من التطبيق." }
-            val directory = File(appContext.cacheDir, "updates")
-            check(directory.exists() || directory.mkdirs()) { "تعذّر تجهيز مساحة التحديث." }
-            val destination = File(directory, "$APK_FILE_PREFIX${validatedManifest.versionCode}.apk")
-
-            if (destination.isFile && isVerifiedCandidate(appContext, destination, validatedManifest)) return@withLock destination
-            destination.delete()
-            val temporary = File(directory, "${destination.name}.part")
+            var stage = "manifest_validation"
+            var temporaryFile: File? = null
             try {
+                val validatedManifest = UpdateManifestValidator.validate(manifest)
+                val appContext = context.applicationContext
+                require(validatedManifest.versionCode > installedVersionCode(appContext)) { "أنت تستخدم أحدث إصدار من التطبيق." }
+                val directory = File(appContext.cacheDir, "updates")
+                check(directory.exists() || directory.mkdirs()) { "تعذّر تجهيز مساحة التحديث." }
+                val destination = File(directory, "$APK_FILE_PREFIX${validatedManifest.versionCode}.apk")
+
+                stage = "cached_apk_validation"
+                if (destination.isFile && isVerifiedCandidate(appContext, destination, validatedManifest)) return@withLock destination
+                destination.delete()
+                val temporary = File(directory, "${destination.name}.part")
+                temporaryFile = temporary
+                stage = "apk_download"
                 downloadApk(validatedManifest, temporary, onProgress)
+                stage = "sha256_validation"
                 verifySha256(temporary, validatedManifest.sha256)
+                stage = "package_signature_and_compatibility"
                 val verified = UpdateApkInstaller.inspectAndValidate(appContext, temporary)
                 require(verified.versionCode == validatedManifest.versionCode) { "رقم إصدار APK لا يطابق ملف التحديث." }
+                stage = "verified_file_commit"
                 require(temporary.renameTo(destination)) { "تعذّر حفظ ملف التحديث." }
                 directory.listFiles()?.filter { it != destination && (it.name.endsWith(".apk") || it.name.endsWith(".part")) }?.forEach { it.delete() }
                 destination
             } catch (error: Exception) {
-                temporary.delete()
+                temporaryFile?.delete()
+                android.util.Log.w("AppUpdate", "APK acquisition failed at $stage (${error.javaClass.simpleName})")
                 if (error is CancellationException) throw error
                 throw error
             }
+        }
+    }
+
+    /** Returns the already-downloaded APK only when its manifest hash and package metadata still verify. */
+    suspend fun cachedApkForInstall(context: Context, manifest: UpdateManifest): File? = withContext(Dispatchers.IO) {
+        downloadMutex.withLock {
+            val validManifest = UpdateManifestValidator.validate(manifest)
+            val appContext = context.applicationContext
+            val candidate = File(File(appContext.cacheDir, "updates"), "$APK_FILE_PREFIX${validManifest.versionCode}.apk")
+            if (isVerifiedCandidate(appContext, candidate, validManifest)) candidate else null
         }
     }
 

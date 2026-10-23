@@ -51,6 +51,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -90,17 +91,34 @@ fun SahatiRoot(authViewModel: AuthViewModel = hiltViewModel()) {
     val context = LocalContext.current
     var publicEmergency by rememberSaveable { mutableStateOf(false) }
     var startupUpdate by remember { mutableStateOf<dev.techda.sahatisukari.data.UpdateCheck?>(null) }
-    var showUpdateDialog by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        runCatching { dev.techda.sahatisukari.data.UpdateRepository.shared.check(context) }
-            .onSuccess {
-                if (it.available) {
-                    startupUpdate = it
-                    val dismissed = context.getSharedPreferences("updates", android.content.Context.MODE_PRIVATE)
-                        .getLong("later_version_code", 0L)
-                    showUpdateDialog = dismissed != it.availableVersionCode
+    var showUpdateDialog by remember { mutableStateOf(false) }
+    var startupCheckStarted by remember { mutableStateOf(false) }
+    var dismissedUpdateVersion by remember { mutableStateOf<Long?>(null) }
+    LaunchedEffect(state) {
+        if (dev.techda.sahatisukari.data.UpdateStartupPolicy.shouldCheck(
+                authIsChecking = state == AuthState.Checking,
+                alreadyCheckedThisLaunch = startupCheckStarted,
+            )
+        ) {
+            startupCheckStarted = true
+            withFrameNanos { }
+            android.util.Log.i("AppUpdate", "Foreground manifest check started")
+            runCatching {
+                dev.techda.sahatisukari.data.UpdateRepository.shared.check(context, forceRefresh = true)
+            }.onSuccess { result ->
+                android.util.Log.i("AppUpdate", "Foreground manifest check completed; updateAvailable=${result.available}")
+                if (result.available) {
+                    startupUpdate = result
+                    showUpdateDialog = dev.techda.sahatisukari.data.UpdateStartupPolicy.shouldShowPrompt(
+                        available = result.available,
+                        dismissedVersionCode = dismissedUpdateVersion,
+                        availableVersionCode = result.availableVersionCode,
+                    )
                 }
+            }.onFailure { error ->
+                android.util.Log.w("AppUpdate", "Foreground manifest check failed (${error.javaClass.simpleName})")
             }
+        }
     }
     when (val current = state) {
         AuthState.Checking -> Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) { CircularProgressIndicator() }
@@ -112,10 +130,7 @@ fun SahatiRoot(authViewModel: AuthViewModel = hiltViewModel()) {
         AlertDialog(
             onDismissRequest = {
                 showUpdateDialog = false
-                if (!update.required) {
-                    context.getSharedPreferences("updates", android.content.Context.MODE_PRIVATE).edit()
-                        .putLong("later_version_code", update.availableVersionCode).apply()
-                }
+                dismissedUpdateVersion = update.availableVersionCode
             },
             title = { Text(if (update.required) "يلزم تحديث التطبيق" else "يتوفر تحديث جديد") },
             text = {
@@ -130,10 +145,7 @@ fun SahatiRoot(authViewModel: AuthViewModel = hiltViewModel()) {
             dismissButton = {
                 TextButton(onClick = {
                     showUpdateDialog = false
-                    if (!update.required) {
-                        context.getSharedPreferences("updates", android.content.Context.MODE_PRIVATE).edit()
-                            .putLong("later_version_code", update.availableVersionCode).apply()
-                    }
+                    dismissedUpdateVersion = update.availableVersionCode
                 }) { Text("لاحقاً") }
             },
         )

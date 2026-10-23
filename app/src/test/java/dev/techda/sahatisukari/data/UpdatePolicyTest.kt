@@ -21,6 +21,21 @@ class UpdatePolicyTest {
     }
 
     @Test
+    fun foregroundCheckRunsOnceAfterAuthenticationStateIsReady() {
+        assertFalse(UpdateStartupPolicy.shouldCheck(authIsChecking = true, alreadyCheckedThisLaunch = false))
+        assertTrue(UpdateStartupPolicy.shouldCheck(authIsChecking = false, alreadyCheckedThisLaunch = false))
+        assertFalse(UpdateStartupPolicy.shouldCheck(authIsChecking = false, alreadyCheckedThisLaunch = true))
+    }
+
+    @Test
+    fun laterDismissalSuppressesOnlyThatVersionForTheCurrentSession() {
+        assertTrue(UpdateStartupPolicy.shouldShowPrompt(available = true, dismissedVersionCode = null, availableVersionCode = 9))
+        assertFalse(UpdateStartupPolicy.shouldShowPrompt(available = true, dismissedVersionCode = 9, availableVersionCode = 9))
+        assertTrue(UpdateStartupPolicy.shouldShowPrompt(available = true, dismissedVersionCode = 9, availableVersionCode = 10))
+        assertFalse(UpdateStartupPolicy.shouldShowPrompt(available = false, dismissedVersionCode = null, availableVersionCode = 9))
+    }
+
+    @Test
     fun onlyTheExactHttpsApkUrlIsTrusted() {
         assertTrue(UpdatePolicy.isTrustedApkUrl("https://download.techda.dev/SahatiSukari.apk"))
         assertFalse(UpdatePolicy.isTrustedApkUrl("http://download.techda.dev/SahatiSukari.apk"))

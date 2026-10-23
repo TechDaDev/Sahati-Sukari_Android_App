@@ -21,8 +21,8 @@ android {
         applicationId = "dev.techda.sahatisukari"
         minSdk = 26
         targetSdk = 36
-        versionCode = 8
-        versionName = "0.2.6"
+        versionCode = 9
+        versionName = "0.2.7"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "API_BASE_URL", "\"https://sahatisukarie.up.railway.app/api/v1/\"")
     }
@@ -35,6 +35,9 @@ android {
         }
     }
     buildTypes {
+        getByName("debug") {
+            applicationIdSuffix = ".debug"
+        }
         getByName("release") {
             isDebuggable = false
             if (hasReleaseSigning) signingConfig = signingConfigs.getByName("production")
