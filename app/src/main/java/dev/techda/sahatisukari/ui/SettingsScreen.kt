@@ -19,6 +19,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -28,6 +29,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
@@ -36,10 +39,7 @@ import androidx.compose.ui.platform.LocalContext
 import dev.techda.sahatisukari.BuildConfig
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 
 @Composable
 fun SettingsScreen(onBack: () -> Unit, onSignedOut: () -> Unit, modifier: Modifier = Modifier, viewModel: SettingsViewModel = hiltViewModel()) {
@@ -48,6 +48,7 @@ fun SettingsScreen(onBack: () -> Unit, onSignedOut: () -> Unit, modifier: Modifi
     var current by remember { mutableStateOf("") }
     var next by remember { mutableStateOf("") }
     var confirm by remember { mutableStateOf("") }
+    var sessionConfirmation by remember { mutableStateOf(SessionConfirmationState()) }
     var email by remember(state.email) { mutableStateOf(state.email) }
     var phone by remember(state.phone) { mutableStateOf(state.phone) }
     LaunchedEffect(Unit) { viewModel.loadInitial() }
@@ -92,10 +93,54 @@ fun SettingsScreen(onBack: () -> Unit, onSignedOut: () -> Unit, modifier: Modifi
         Text("10 أحرف على الأقل، وحرف إنجليزي كبير وصغير ورقم.", Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Start)
         Button(onClick = { viewModel.changePassword(current, next, confirm) }, enabled = !state.busy && current.isNotEmpty() && next.isNotEmpty() && confirm.isNotEmpty(), modifier = Modifier.fillMaxWidth()) { Text("تحديث كلمة المرور") }
         Text("الأجهزة النشطة", Modifier.fillMaxWidth(), style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Start)
-        SessionCards(state.sessions, onDelete = viewModel::revokeSession)
+        SessionCards(
+            state.sessions,
+            state.timeZoneId,
+            state.numerals,
+            busy = state.busy,
+            onRevoke = { session -> sessionConfirmation = sessionConfirmation.askToRevoke(session) },
+        )
         OutlinedButton(onClick = viewModel::loadSessions, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) { Text("تحديث الجلسات") }
-        Button(onClick = viewModel::logoutAll, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) { Text("تسجيل الخروج من جميع الأجهزة") }
+        Button(onClick = { sessionConfirmation = sessionConfirmation.askToRevokeAll() }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) { Text("تسجيل الخروج من جميع الأجهزة") }
         if (state.busy) CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally))
+    }
+    sessionConfirmation.selectedSession?.let { session ->
+        AlertDialog(
+            onDismissRequest = { sessionConfirmation = sessionConfirmation.cancel() },
+            title = { Text("تأكيد إنهاء الجلسة") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(session.deviceName, fontWeight = FontWeight.SemiBold)
+                    Text(session.description, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("تاريخ إنشاء الجلسة: ${session.createdAt}")
+                    Text("آخر نشاط: ${session.lastActivity}")
+                    Text("سيُمنع هذا الجهاز من الوصول إلى الحساب. لا يحدد الخادم الجلسة المستخدمة حاليًا؛ إذا أنهيت جلسة هذا التطبيق فستعود إلى شاشة تسجيل الدخول.")
+                }
+            },
+            confirmButton = {
+                TextButton(enabled = !state.busy, onClick = {
+                    val id = sessionConfirmation.confirmedSessionId()
+                    sessionConfirmation = sessionConfirmation.cancel()
+                    id?.let(viewModel::revokeSession)
+                }) { Text("إنهاء الجلسة") }
+            },
+            dismissButton = { TextButton(onClick = { sessionConfirmation = sessionConfirmation.cancel() }) { Text("إلغاء") } },
+        )
+    }
+    if (sessionConfirmation.revokeAllPending) {
+        AlertDialog(
+            onDismissRequest = { sessionConfirmation = sessionConfirmation.cancel() },
+            title = { Text("تسجيل الخروج من جميع الأجهزة؟") },
+            text = { Text("سيُنهي هذا الإجراء جلسات التطبيق والموقع، بما فيها هذه الجلسة. ستحتاج إلى تسجيل الدخول مجددًا على هذا الجهاز.") },
+            confirmButton = {
+                TextButton(enabled = !state.busy, onClick = {
+                    val confirmed = sessionConfirmation.confirmedRevokeAll()
+                    sessionConfirmation = sessionConfirmation.cancel()
+                    if (confirmed) viewModel.logoutAll()
+                }) { Text("تسجيل الخروج من الجميع") }
+            },
+            dismissButton = { TextButton(onClick = { sessionConfirmation = sessionConfirmation.cancel() }) { Text("إلغاء") } },
+        )
     }
 }
 
@@ -116,20 +161,45 @@ private fun SecretField(label: String, value: String, onChange: (String) -> Unit
 }
 
 @Composable
-private fun SessionCards(data: JsonObject?, onDelete: (String) -> Unit) {
-    val array = (data?.get("sessions") ?: data?.get("items")) as? JsonArray
-    if (array.isNullOrEmpty()) {
-        Text("لا توجد جلسات إضافية لعرضها.", Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Start)
+private fun SessionCards(
+    data: JsonObject?,
+    timeZoneId: String?,
+    numeralSystem: String?,
+    busy: Boolean,
+    onRevoke: (ActiveSessionCard) -> Unit,
+) {
+    androidx.compose.runtime.CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+        SessionCardsContent(data, timeZoneId, numeralSystem, busy, onRevoke)
+    }
+}
+
+@Composable
+private fun SessionCardsContent(
+    data: JsonObject?,
+    timeZoneId: String?,
+    numeralSystem: String?,
+    busy: Boolean,
+    onRevoke: (ActiveSessionCard) -> Unit,
+) {
+    if (data == null) {
+        Text("جارٍ تحميل الجلسات…", Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Start)
         return
     }
-    array.forEach { item ->
-        val record = runCatching { item.jsonObject }.getOrNull() ?: return@forEach
-        val id = record["id"]?.jsonPrimitive?.content ?: return@forEach
+    val sessions = activeSessionCards(data, timeZoneId, numeralSystem)
+    if (sessions.isEmpty()) {
+        Text("لا توجد جلسات مسجلة.", Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Start)
+        return
+    }
+    sessions.forEach { session ->
         Card(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(12.dp), horizontalAlignment = Alignment.End) {
-                Text(record["deviceLabel"]?.jsonPrimitive?.content ?: "جهاز", Modifier.fillMaxWidth(), textAlign = TextAlign.Start)
-                Text(record["lastUsedAt"]?.jsonPrimitive?.content ?: "", Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Start)
-                OutlinedButton(onClick = { onDelete(id) }) { Text("إنهاء الجلسة") }
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp), horizontalAlignment = Alignment.End) {
+                Text(session.deviceName, Modifier.fillMaxWidth(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Start)
+                Text(session.description, Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Start)
+                Text("تاريخ إنشاء الجلسة", Modifier.fillMaxWidth(), style = MaterialTheme.typography.labelMedium, textAlign = TextAlign.Start)
+                MedicalValueText(session.createdAt, Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodyMedium)
+                Text("آخر نشاط", Modifier.fillMaxWidth(), style = MaterialTheme.typography.labelMedium, textAlign = TextAlign.Start)
+                MedicalValueText(session.lastActivity, Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodyMedium)
+                OutlinedButton(onClick = { onRevoke(session) }, enabled = !busy) { Text("إنهاء هذه الجلسة") }
             }
         }
     }

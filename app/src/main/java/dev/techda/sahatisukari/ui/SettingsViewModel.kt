@@ -26,7 +26,25 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.put
 
-data class SettingsState(val sessions: JsonObject? = null, val email: String = "", val phone: String = "", val glucoseUnit: String = "MG_DL", val numerals: String = "LATIN", val busy: Boolean = false, val error: String? = null, val notice: String? = null, val signedOut: Boolean = false, val updateBusy: Boolean = false, val updateProgress: Int? = null, val updateError: String? = null, val updateCheckedAt: String? = null, val updateCheck: UpdateCheck? = null)
+data class SettingsState(
+    val sessions: JsonObject? = null,
+    val email: String = "",
+    val phone: String = "",
+    val glucoseUnit: String = "MG_DL",
+    val numerals: String = "LATIN",
+    val timeZoneId: String? = null,
+    val busy: Boolean = false,
+    val error: String? = null,
+    val notice: String? = null,
+    val signedOut: Boolean = false,
+    val updateBusy: Boolean = false,
+    val updateProgress: Int? = null,
+    val updateError: String? = null,
+    val updateCheckedAt: String? = null,
+    val updateCheck: UpdateCheck? = null,
+)
+
+private class SettingsApiFailure(val status: Int, message: String) : IllegalStateException(message)
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
@@ -76,15 +94,18 @@ class SettingsViewModel @Inject constructor(
         val profile = profileResponse.body()?.data?.get("profile")?.let { runCatching { it.jsonObject }.getOrNull() } ?: profileResponse.body()?.data
         val unit = profile?.get("preferredGlucoseUnit")?.jsonPrimitive?.contentOrNull ?: "MG_DL"
         val numerals = profile?.get("numeralSystem")?.jsonPrimitive?.contentOrNull ?: "LATIN"
+        val timeZoneId = profile?.get("timezone")?.jsonPrimitive?.contentOrNull
         val sessionsResponse = authApi.sessions()
         if (!sessionsResponse.isSuccessful) fail(sessionsResponse.code(), sessionsResponse.errorBody()?.string())
-        _state.value = _state.value.copy(email = profile?.get("email")?.jsonPrimitive?.contentOrNull.orEmpty(), phone = profile?.get("phone")?.jsonPrimitive?.contentOrNull.orEmpty(), glucoseUnit = unit, numerals = numerals, sessions = sessionsResponse.body()?.data, busy = false)
+        val sessions = sessionsResponse.body()?.data ?: error("تعذر قراءة قائمة الأجهزة.")
+        _state.value = _state.value.copy(email = profile?.get("email")?.jsonPrimitive?.contentOrNull.orEmpty(), phone = profile?.get("phone")?.jsonPrimitive?.contentOrNull.orEmpty(), glucoseUnit = unit, numerals = numerals, timeZoneId = timeZoneId, sessions = sessions, busy = false)
     }
 
     fun loadSessions() = request {
         val response = authApi.sessions()
         if (!response.isSuccessful) fail(response.code(), response.errorBody()?.string())
-        _state.value = _state.value.copy(sessions = response.body()?.data, busy = false)
+        val sessions = response.body()?.data ?: error("تعذر قراءة قائمة الأجهزة.")
+        _state.value = _state.value.copy(sessions = sessions, busy = false)
     }
 
     fun loadPreferences() = request {
@@ -130,18 +151,30 @@ class SettingsViewModel @Inject constructor(
     fun revokeSession(id: String) = request {
         val response = authApi.deleteSession(id)
         if (!response.isSuccessful) fail(response.code(), response.errorBody()?.string())
-        _state.value = _state.value.copy(busy = false, notice = "تم إنهاء الجلسة.")
-        loadSessions()
+        val sessionsResponse = authApi.sessions()
+        if (!sessionsResponse.isSuccessful) fail(sessionsResponse.code(), sessionsResponse.errorBody()?.string())
+        val sessions = sessionsResponse.body()?.data ?: error("تعذر تحديث قائمة الأجهزة.")
+        _state.value = _state.value.copy(sessions = sessions, busy = false, error = null, notice = "تم إنهاء الجلسة.")
     }
 
     private fun request(action: suspend () -> Unit) {
-        if (_state.value.busy) return
+        if (!_state.value.canStartSettingsRequest()) return
         _state.value = _state.value.copy(busy = true, error = null, notice = null)
-        viewModelScope.launch { runCatching { action() }.onFailure { _state.value = _state.value.copy(busy = false, error = it.message ?: "تعذر تنفيذ الطلب.") } }
+        viewModelScope.launch {
+            runCatching { action() }.onFailure { error ->
+                if (error is kotlinx.coroutines.CancellationException) throw error
+                if (error is SettingsApiFailure && error.status in setOf(401, 403)) {
+                    runCatching { tokenStore.clear() }
+                }
+                val message = if (error is IOException) "تعذر الاتصال بالخدمة. تحقق من اتصال الإنترنت وحاول مجددًا."
+                else error.message ?: "تعذر تنفيذ الطلب."
+                _state.value = _state.value.afterSettingsFailure((error as? SettingsApiFailure)?.status, message)
+            }
+        }
     }
 
     private fun fail(status: Int, body: String?): Nothing {
         val message = runCatching { kotlinx.serialization.json.Json.parseToJsonElement(body.orEmpty()).jsonObject["error"]?.jsonPrimitive?.content }.getOrNull()
-        throw IllegalStateException(message ?: when (status) { 401 -> "انتهت الجلسة. سجّل الدخول مجددًا."; 403 -> "لا تملك صلاحية هذا الطلب."; 429 -> "طلبات كثيرة. حاول لاحقًا."; in 500..599 -> "الخدمة غير متاحة مؤقتًا."; else -> "تعذر تنفيذ الطلب. تحقق من البيانات." })
+        throw SettingsApiFailure(status, message ?: when (status) { 401 -> "انتهت الجلسة. سجّل الدخول مجددًا."; 403 -> "لا تملك صلاحية هذا الطلب."; 429 -> "طلبات كثيرة. حاول لاحقًا."; in 500..599 -> "الخدمة غير متاحة مؤقتًا."; else -> "تعذر تنفيذ الطلب. تحقق من البيانات." })
     }
 }

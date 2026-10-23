@@ -75,4 +75,36 @@ class AuthApiContractTest {
         assertEquals("/api/v1/auth/forgot-password", recovery.path)
         assertEquals("patient@example.test", Json.parseToJsonElement(recovery.body.readUtf8()).jsonObject["email"]!!.jsonPrimitive.content)
     }
+
+    @Test fun sessionListRevokeAndRevokeAllUseTheDocumentedAuthenticatedPaths() {
+        server.enqueue(MockResponse().setBody("""{"ok":true,"data":{"sessions":[{"id":"synthetic-session-id"}]}}"""))
+        val sessions = kotlinx.coroutines.runBlocking { api.sessions() }
+        assertEquals(200, sessions.code())
+        val listRequest = server.takeRequest()
+        assertEquals("GET", listRequest.method)
+        assertEquals("/api/v1/auth/sessions", listRequest.path)
+
+        server.enqueue(MockResponse().setBody("""{"ok":true,"data":{"revoked":true}}"""))
+        val revoke = kotlinx.coroutines.runBlocking { api.deleteSession("synthetic-session-id") }
+        assertEquals(200, revoke.code())
+        val revokeRequest = server.takeRequest()
+        assertEquals("DELETE", revokeRequest.method)
+        assertEquals("/api/v1/auth/sessions/synthetic-session-id", revokeRequest.path)
+
+        server.enqueue(MockResponse().setBody("""{"ok":true,"data":{"loggedOut":true}}"""))
+        val revokeAll = kotlinx.coroutines.runBlocking { api.logoutAll() }
+        assertEquals(200, revokeAll.code())
+        val revokeAllRequest = server.takeRequest()
+        assertEquals("POST", revokeAllRequest.method)
+        assertEquals("/api/v1/auth/logout-all", revokeAllRequest.path)
+    }
+
+    @Test fun failedSessionRevokeRemainsAnApiFailure() {
+        server.enqueue(MockResponse().setResponseCode(500).setBody("""{"ok":false,"error":"تعذر إنهاء الجلسة."}"""))
+
+        val response = kotlinx.coroutines.runBlocking { api.deleteSession("synthetic-session-id") }
+
+        assertEquals(500, response.code())
+        assertEquals("DELETE", server.takeRequest().method)
+    }
 }
