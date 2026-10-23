@@ -70,7 +70,12 @@ private val glucoseContexts = listOf("FASTING", "BEFORE_BREAKFAST", "AFTER_BREAK
 private val doseUnits = listOf("UNIT", "MG", "MCG", "G", "ML", "TABLET", "CAPSULE", "DROP", "PUFF", "SACHET")
 
 @Composable
-fun PatientSectionScreen(section: Int, modifier: Modifier = Modifier, viewModel: PatientSectionViewModel = hiltViewModel()) {
+fun PatientSectionScreen(
+    section: Int,
+    modifier: Modifier = Modifier,
+    initialJournalEndpoint: String = "meals",
+    viewModel: PatientSectionViewModel = hiltViewModel(),
+) {
     val state by viewModel.state.collectAsState()
     val endpoint = when (section) { 2 -> "glucose"; 3 -> "medications"; else -> "profile" }
     LaunchedEffect(endpoint) {
@@ -79,7 +84,7 @@ fun PatientSectionScreen(section: Int, modifier: Modifier = Modifier, viewModel:
     }
     LaunchedEffect(section) { if (section == 3) viewModel.loadRelated("administrations") }
     if (section == 4) {
-        JournalScreen(modifier, viewModel)
+        JournalScreen(modifier, viewModel, initialJournalEndpoint)
         return
     }
     if (section == 5) {
@@ -139,8 +144,8 @@ private fun SectionContent(section: Int, state: PatientSectionState, modifier: M
 }
 
 @Composable
-private fun JournalScreen(modifier: Modifier, viewModel: PatientSectionViewModel) {
-    var endpoint by remember { mutableStateOf("meals") }
+private fun JournalScreen(modifier: Modifier, viewModel: PatientSectionViewModel, initialEndpoint: String) {
+    var endpoint by remember(initialEndpoint) { mutableStateOf(initialEndpoint) }
     val state by viewModel.state.collectAsState()
     var adding by remember(endpoint) { mutableStateOf(false) }
     LaunchedEffect(endpoint) { viewModel.load(endpoint) }

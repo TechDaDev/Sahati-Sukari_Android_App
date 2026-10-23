@@ -3,14 +3,11 @@ package dev.techda.sahatisukari.ui
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.background
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -22,7 +19,6 @@ import androidx.compose.material.icons.outlined.Bloodtype
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.automirrored.outlined.Logout
-import androidx.compose.material.icons.outlined.Medication
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Sos
 import androidx.compose.material.icons.outlined.Settings
@@ -55,10 +51,6 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -152,6 +144,7 @@ fun SahatiRoot(authViewModel: AuthViewModel = hiltViewModel()) {
 @Composable
 private fun PatientApp(user: AuthUser, onLogout: () -> Unit, settingsViewModel: SettingsViewModel = hiltViewModel()) {
     var selected by rememberSaveable { mutableIntStateOf(0) }
+    var journalEndpoint by rememberSaveable { mutableStateOf("meals") }
     var emergency by rememberSaveable { mutableStateOf(false) }
     var settings by rememberSaveable { mutableStateOf(false) }
     Scaffold(
@@ -174,20 +167,20 @@ private fun PatientApp(user: AuthUser, onLogout: () -> Unit, settingsViewModel: 
         bottomBar = {
             SahatiBottomNavigation(
                 selectedIndex = if (emergency || settings) -1 else selected,
-                onSelect = { selected = it; emergency = false; settings = false },
+                onSelect = { selected = it; if (it == 4) journalEndpoint = "meals"; emergency = false; settings = false },
             )
         },
         containerColor = MaterialTheme.colorScheme.background,
     ) { padding ->
         if (emergency) EmergencyHelp(Modifier.fillMaxSize().padding(padding))
         else if (settings) SettingsScreen(onBack = { settings = false }, onSignedOut = { settings = false; onLogout() }, modifier = Modifier.fillMaxSize().padding(padding), viewModel = settingsViewModel)
-        else if (selected == 0) DashboardScreen(user, Modifier.fillMaxSize().padding(padding), onGlucose = { selected = 2 }, onReports = { selected = 5 }, onProfile = { selected = 1 })
-        else PatientSectionScreen(selected, Modifier.fillMaxSize().padding(padding))
+        else if (selected == 0) DashboardScreen(user, Modifier.fillMaxSize().padding(padding), onGlucose = { selected = 2 }, onJournal = { journalEndpoint = "activities"; selected = 4 }, onReports = { selected = 5 }, onProfile = { selected = 1 })
+        else PatientSectionScreen(selected, Modifier.fillMaxSize().padding(padding), initialJournalEndpoint = journalEndpoint)
     }
 }
 
 @Composable
-private fun DashboardScreen(user: AuthUser, modifier: Modifier = Modifier, onGlucose: () -> Unit, onReports: () -> Unit, onProfile: () -> Unit, viewModel: DashboardViewModel = hiltViewModel()) {
+private fun DashboardScreen(user: AuthUser, modifier: Modifier = Modifier, onGlucose: () -> Unit, onJournal: () -> Unit, onReports: () -> Unit, onProfile: () -> Unit, viewModel: DashboardViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsState()
     Column(modifier.verticalScroll(rememberScrollState()).padding(horizontal = SahatiUiTokens.screenHorizontal, vertical = SahatiUiTokens.screenVertical), verticalArrangement = Arrangement.spacedBy(SahatiUiTokens.sectionSpacing)) {
         Text("لوحة المتابعة الصحية", modifier = Modifier.fillMaxWidth(), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, textAlign = TextAlign.Start)
@@ -213,6 +206,8 @@ private fun DashboardScreen(user: AuthUser, modifier: Modifier = Modifier, onGlu
                 numeralSystem = profile?.string("numeralSystem"),
                 glucoseUnit = profile?.string("preferredGlucoseUnit") ?: "MG_DL",
                 onProfile = onProfile,
+                onGlucose = onGlucose,
+                onJournal = onJournal,
             )
         }
         Text("هذه اللوحة تعرض السجلات التي أضفتها فقط. لا تقدم تشخيصًا أو توصية علاجية.", Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Start)
@@ -220,7 +215,15 @@ private fun DashboardScreen(user: AuthUser, modifier: Modifier = Modifier, onGlu
 }
 
 @Composable
-private fun DashboardContent(response: JsonObject, timeZoneId: String, numeralSystem: String?, glucoseUnit: String, onProfile: () -> Unit) {
+private fun DashboardContent(
+    response: JsonObject,
+    timeZoneId: String,
+    numeralSystem: String?,
+    glucoseUnit: String,
+    onProfile: () -> Unit,
+    onGlucose: () -> Unit,
+    onJournal: () -> Unit,
+) {
     val dash = response.obj("dashboard") ?: return
     val completion = dash.obj("completion")
     val percent = completion?.int("percent")
@@ -233,72 +236,129 @@ private fun DashboardContent(response: JsonObject, timeZoneId: String, numeralSy
             }
         }
     }
-    val latest = dash.obj("latestGlucose")
-    val latestGlucose = latest?.let {
-        MedicalPresentation.formatGlucose(it.string("glucoseValue"), it.string("glucoseUnit") ?: glucoseUnit, numeralSystem)
-    } ?: "—"
-    val latestAt = latest?.let { MedicalPresentation.formatInstant(it.string("measurementDatetime"), timeZoneId, numeralSystem) }.orEmpty()
-    StatCard("آخر قراءة سكر", latestGlucose, if (latest == null) "لم تسجل أي قراءة بعد" else latestAt, Icons.Outlined.Bloodtype)
+    val latest = DashboardPresentation.latestGlucose(dash.obj("latestGlucose"), glucoseUnit, timeZoneId, numeralSystem)
+    DashboardLatestGlucoseCard(latest, onGlucose)
+    DashboardPresentation.glucoseInformationNote(dash.obj("latestGlucose")?.string("standardizedValueMgdl"), numeralSystem)?.let { note ->
+        Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer), shape = RoundedCornerShape(SahatiUiTokens.cardRadius)) {
+            Text(note, Modifier.padding(SahatiUiTokens.cardPadding), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
+        }
+    }
     StatCard("قياسات اليوم", dash.string("todayReadings")?.let { MedicalPresentation.formatDecimal(it, 0, numeralSystem) } ?: "—", if (dash.int("todayReadings") == 0) "لم تسجل أي قراءة اليوم" else "قراءات مسجّلة اليوم", Icons.Outlined.Assessment)
-    StatCard("آخر جرعة دواء مسجّلة", dash.obj("lastAdministration")?.let { "جرعة مسجّلة" } ?: "—", if (dash.obj("lastAdministration") == null) "لا توجد جرعات مسجّلة" else "", Icons.Outlined.Medication)
+    DashboardLatestAdministrationCard(DashboardPresentation.latestAdministration(dash.obj("lastAdministration"), timeZoneId, numeralSystem))
     val activityMinutes = dash.string("activityMinutes") ?: "0"
-    StatCard("نشاط اليوم", if (activityMinutes == "0") "—" else MedicalPresentation.formatActivityDuration(activityMinutes, numeralSystem), "${MedicalPresentation.localizedDigits((dash.array("todayActivities")?.size ?: 0).toString(), numeralSystem)} نشاط مسجّل", Icons.Outlined.CalendarMonth)
+    StatCard("نشاط اليوم", if ((activityMinutes.toIntOrNull() ?: 0) == 0) "—" else MedicalPresentation.formatActivityDuration(activityMinutes, numeralSystem), "${MedicalPresentation.localizedDigits((dash.array("todayActivities")?.size ?: 0).toString(), numeralSystem)} نشاط مسجّل", Icons.Outlined.CalendarMonth)
+    val trendPoints = DashboardPresentation.trendPoints(dash.array("trendData"))
     Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(SahatiUiTokens.cardRadius), elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)) {
         Column(Modifier.padding(SahatiUiTokens.cardPadding), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("اتجاه قراءات السكر (آخر 14 يومًا)", fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Start)
-            TrendChart(dash, glucoseUnit, numeralSystem)
+            DashboardTrendChart(trendPoints, glucoseUnit, timeZoneId, numeralSystem)
         }
     }
     Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(SahatiUiTokens.cardRadius), elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)) {
         CompositionLocalProvider(androidx.compose.ui.platform.LocalLayoutDirection provides LayoutDirection.Rtl) {
             Column(Modifier.padding(SahatiUiTokens.cardPadding), verticalArrangement = Arrangement.spacedBy(8.dp), horizontalAlignment = Alignment.End) {
                 Text("ملخص اليوم", fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Start)
-                SummaryRow("الوجبات المسجّلة", dash.string("mealsToday")?.let { MedicalPresentation.formatDecimal(it, 0, numeralSystem) } ?: "—")
-                SummaryRow("الأعراض المسجّلة", dash.array("todaySymptoms")?.size?.let { MedicalPresentation.localizedDigits(it.toString(), numeralSystem) } ?: "—")
-                SummaryRow("الوزن الأخير", dash.array("latestWeight")?.firstOrNull()?.jsonObject?.string("weightKg")?.let { MedicalPresentation.formatWeight(it, numeralSystem) } ?: "—")
-                SummaryRow("آخر HbA1c مسجّل", dash.array("latestHba1c")?.firstOrNull()?.jsonObject?.string("value")?.let { MedicalPresentation.formatHbA1c(it, numeralSystem) } ?: "—")
+                DashboardPresentation.todaySummary(dash, numeralSystem).forEach { SummaryRow(it.label, it.value) }
+            }
+        }
+    }
+    val eventDeltas = DashboardPresentation.eventDeltas(dash, timeZoneId, numeralSystem)
+    if (eventDeltas.isNotEmpty()) {
+        Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(SahatiUiTokens.cardRadius), elevation = CardDefaults.cardElevation(1.dp)) {
+            Column(Modifier.padding(SahatiUiTokens.cardPadding), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("فروق متوسط القراءات مع الأحداث المسجّلة (آخر 14 يومًا)", fontWeight = FontWeight.Bold)
+                Text("يُحسب الفرق بين متوسط القراءات قبل الحدث بثلاث ساعات وبعده بثلاث ساعات اعتمادًا على القراءات المسجّلة فقط. هذا وصف زمني ولا يعني أن الحدث سبّب التغيّر.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                eventDeltas.forEach { event ->
+                    Column(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text(event.label, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                        MedicalValueText(event.at, style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant))
+                        val delta = event.delta
+                        if (delta == null) {
+                            Text("لا توجد قراءات كافية قبل الحدث وبعده لعرض الفرق", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        } else {
+                            val decimals = if (glucoseUnit == "MMOL_L") 1 else 0
+                            val before = MedicalPresentation.formatDecimal(event.before?.toString(), decimals, numeralSystem)
+                            val after = MedicalPresentation.formatDecimal(event.after?.toString(), decimals, numeralSystem)
+                            val difference = MedicalPresentation.formatDecimal(kotlin.math.abs(delta).toString(), decimals, numeralSystem)
+                            val unitLabel = DashboardPresentation.glucoseUnitLabel(glucoseUnit)
+                            MedicalValueText("متوسط قبل: $before $unitLabel — بعد: $after $unitLabel — الفرق: ${if (delta > 0) "+" else if (delta < 0) "−" else ""}$difference $unitLabel", style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+            }
+        }
+    }
+    DashboardRecentGlucoseCard(DashboardPresentation.recentGlucose(dash.array("recentGlucose"), glucoseUnit, timeZoneId, numeralSystem), onGlucose)
+    DashboardTodayActivitiesCard(DashboardPresentation.todayActivities(dash.array("todayActivities"), timeZoneId, numeralSystem), onJournal)
+}
+
+@Composable
+private fun DashboardLatestGlucoseCard(record: DashboardGlucoseCard?, onGlucose: () -> Unit) {
+    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(SahatiUiTokens.cardRadius), elevation = CardDefaults.cardElevation(1.dp)) {
+        Column(Modifier.fillMaxWidth().padding(SahatiUiTokens.cardPadding), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Text("آخر قراءة سكر", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            MedicalValueText(record?.value ?: "—", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold))
+            if (record == null) {
+                Text("لم تسجل أي قراءة بعد", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                record.context?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                record.dateTime?.let { MedicalValueText(it, style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)) }
+            }
+            TextButton(onClick = onGlucose) { Text("كل القياسات") }
+        }
+    }
+}
+
+@Composable
+private fun DashboardLatestAdministrationCard(record: DashboardAdministrationCard?) {
+    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(SahatiUiTokens.cardRadius), elevation = CardDefaults.cardElevation(1.dp)) {
+        Column(Modifier.fillMaxWidth().padding(SahatiUiTokens.cardPadding), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Text("آخر جرعة دواء مسجّلة", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (record == null) {
+                Text("لا توجد جرعات مسجّلة", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                Text(record.status, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                record.medicationName?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+                record.actualDose?.let { MedicalValueText("الجرعة المسجّلة: $it", style = MaterialTheme.typography.bodySmall) }
+                record.dateTime?.let { MedicalValueText(it, style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)) }
             }
         }
     }
 }
 
 @Composable
-private fun TrendChart(dashboard: JsonObject, glucoseUnit: String, numeralSystem: String?) {
-    val points = dashboard.array("trendData").orEmpty().mapNotNull { element ->
-        val value = runCatching { element.jsonObject.string("value")?.toFloatOrNull() }.getOrNull() ?: return@mapNotNull null
-        value
-    }
-    if (points.size < 2) {
-        Text("لا توجد بيانات كافية لعرض الاتجاه. يلزم وجود قراءتين على الأقل.", Modifier.fillMaxWidth(), textAlign = TextAlign.Start, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        return
-    }
-    val lineColor = MaterialTheme.colorScheme.primary
-    val gridColor = MaterialTheme.colorScheme.outlineVariant
-    MedicalValueText(
-        "${MedicalPresentation.formatGlucose(points.minOrNull()?.toString(), glucoseUnit, numeralSystem)} — ${MedicalPresentation.formatGlucose(points.maxOrNull()?.toString(), glucoseUnit, numeralSystem)}",
-        Modifier.fillMaxWidth(),
-        style = MaterialTheme.typography.labelSmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
-    )
-    Canvas(Modifier.fillMaxWidth().height(150.dp)) {
-        val horizontalInset = 8.dp.toPx()
-        val verticalInset = 8.dp.toPx()
-        val chartWidth = size.width - 2 * horizontalInset
-        val chartHeight = size.height - 2 * verticalInset
-        repeat(4) { index ->
-            val y = verticalInset + chartHeight * index / 3f
-            drawLine(gridColor, Offset(horizontalInset, y), Offset(size.width - horizontalInset, y), strokeWidth = 1.dp.toPx())
+private fun DashboardRecentGlucoseCard(items: List<DashboardGlucoseCard>, onGlucose: () -> Unit) {
+    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(SahatiUiTokens.cardRadius), elevation = CardDefaults.cardElevation(1.dp)) {
+        Column(Modifier.fillMaxWidth().padding(SahatiUiTokens.cardPadding), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("أحدث قراءات السكر", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+            if (items.isEmpty()) Text("لم تسجل أي قراءة للسكر بعد.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            else items.forEach { item ->
+                Column(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    MedicalValueText(item.value, style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold))
+                    Text(item.context ?: "سياق غير مسجّل", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    item.dateTime?.let { MedicalValueText(it, style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)) }
+                }
+            }
+            TextButton(onClick = onGlucose) { Text("إدارة القياسات") }
         }
-        val min = points.minOrNull() ?: 0f
-        val max = points.maxOrNull() ?: min
-        val spread = (max - min).takeIf { it > 0f } ?: 1f
-        val path = Path()
-        points.forEachIndexed { index, value ->
-            val x = horizontalInset + chartWidth * index / (points.size - 1).toFloat()
-            val y = verticalInset + chartHeight * (1f - (value - min) / spread)
-            if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
-            drawCircle(lineColor, radius = 3.dp.toPx(), center = Offset(x, y))
+    }
+}
+
+@Composable
+private fun DashboardTodayActivitiesCard(items: List<DashboardActivityItem>, onJournal: () -> Unit) {
+    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(SahatiUiTokens.cardRadius), elevation = CardDefaults.cardElevation(1.dp)) {
+        Column(Modifier.fillMaxWidth().padding(SahatiUiTokens.cardPadding), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("نشاطات اليوم", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+            if (items.isEmpty()) Text("لا يوجد نشاط بدني مسجّل اليوم.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            else items.forEach { item ->
+                Column(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(item.type, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                    Text(listOfNotNull(item.duration, item.intensity).joinToString(" — "), style = MaterialTheme.typography.bodySmall)
+                    item.time?.let { MedicalValueText(it, style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)) }
+                }
+            }
+            TextButton(onClick = onJournal) { Text("يومياتي") }
         }
-        drawPath(path, lineColor, style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round))
     }
 }
 
