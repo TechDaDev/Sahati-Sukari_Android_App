@@ -295,10 +295,10 @@ internal fun StatCard(label: String, value: String, detail: String, icon: ImageV
 }
 
 @Composable
-private fun SummaryRow(label: String, value: String) {
+internal fun SummaryRow(label: String, value: String) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(value, fontWeight = FontWeight.Bold)
         Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, fontWeight = FontWeight.Bold)
     }
 }
 

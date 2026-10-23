@@ -1,8 +1,16 @@
 package dev.techda.sahatisukari.ui
 
+import android.content.ContentValues
+import android.graphics.Bitmap
+import android.os.Environment
+import android.provider.MediaStore
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Text
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.rememberScrollState
@@ -14,7 +22,9 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toPixelMap
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.captureToImage
@@ -27,6 +37,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.toPixelMap
 import dev.techda.sahatisukari.ui.theme.SahatiTheme
 import kotlinx.serialization.json.Json
@@ -38,6 +49,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
+import androidx.test.platform.app.InstrumentationRegistry
+import java.io.OutputStream
 import kotlin.math.abs
 
 class UiCorrectionTest {
@@ -57,6 +70,73 @@ class UiCorrectionTest {
         val cardWidth = composeRule.onRoot().fetchSemanticsNode().boundsInRoot.width
         val label = composeRule.onNodeWithText("آخر قراءة سكر").fetchSemanticsNode().boundsInRoot
         assertTrue("Arabic stat label should sit on the physical right in RTL", label.center.x > cardWidth / 2f)
+    }
+
+    @Test fun dashboardSummaryRowsPlaceArabicLabelsRightOfReadableValuesInRtlLayout() {
+        val rows = listOf(
+            "الوجبات المسجّلة" to "0",
+            "الأعراض المسجّلة" to "1",
+            "الوزن الأخير" to "122.50 كغم",
+            "آخر HbA1c مسجّل" to "5.8%",
+        )
+        val fontScale = mutableStateOf(1f)
+        composeRule.setContent {
+            val density = LocalDensity.current
+            CompositionLocalProvider(
+                LocalLayoutDirection provides LayoutDirection.Rtl,
+                LocalDensity provides Density(density.density, fontScale.value),
+            ) {
+                SahatiTheme {
+                    Card(
+                        Modifier.width(360.dp),
+                        shape = RoundedCornerShape(20.dp),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                    ) {
+                        Column(Modifier.padding(16.dp)) {
+                            Text("ملخص اليوم", style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
+                            rows.forEach { (label, value) -> SummaryRow(label, value) }
+                        }
+                    }
+                }
+            }
+        }
+
+        var standardLabelHeight = 0f
+        listOf(1f, 1.3f).forEachIndexed { index, scale ->
+            if (index > 0) {
+                composeRule.runOnIdle { fontScale.value = scale }
+                composeRule.waitForIdle()
+            }
+            rows.forEach { (labelText, valueText) ->
+                val labelNode = composeRule.onNodeWithText(labelText).assertIsDisplayed().fetchSemanticsNode()
+                val valueNode = composeRule.onNodeWithText(valueText).assertIsDisplayed().fetchSemanticsNode()
+                val label = labelNode.boundsInRoot
+                val value = valueNode.boundsInRoot
+                assertTrue("$labelText should be physically right of $valueText", label.center.x > value.center.x)
+                assertTrue("$labelText and $valueText must not overlap at font scale $scale", value.right <= label.left)
+                assertTrue("$labelText must have visible width", label.width > 0f)
+                assertTrue("$valueText must have visible width", value.width > 0f)
+                if (index == 0 && labelText == rows.first().first) standardLabelHeight = label.height
+                if (index == 1 && labelText == rows.first().first) {
+                    assertTrue("Text should scale at 1.3x font scale", label.height > standardLabelHeight)
+                }
+            }
+
+            composeRule.waitForIdle()
+            val image = composeRule.onRoot().captureToImage().asAndroidBitmap()
+            val resolver = InstrumentationRegistry.getInstrumentation().targetContext.contentResolver
+            val outputUri = resolver.insert(
+                MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                ContentValues().apply {
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, "dashboard-summary-rtl-${scale}x.png")
+                    put(MediaStore.MediaColumns.MIME_TYPE, "image/png")
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                },
+            ) ?: error("Could not create emulator screenshot")
+            resolver.openOutputStream(outputUri).use { output: OutputStream? ->
+                checkNotNull(output).use { image.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            }
+        }
     }
 
     @Test fun pageTitleAlignsToRightInRtlLayout() {
