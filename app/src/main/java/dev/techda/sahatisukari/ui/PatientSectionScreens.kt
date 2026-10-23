@@ -74,6 +74,9 @@ fun PatientSectionScreen(
     section: Int,
     modifier: Modifier = Modifier,
     initialJournalEndpoint: String = "meals",
+    quickAddRequest: DashboardQuickAddRequest? = null,
+    onQuickAddCancel: () -> Unit = {},
+    onQuickAddSaveResult: (Boolean) -> Unit = {},
     viewModel: PatientSectionViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsState()
@@ -84,21 +87,30 @@ fun PatientSectionScreen(
     }
     LaunchedEffect(section) { if (section == 3) viewModel.loadRelated("administrations") }
     if (section == 4) {
-        JournalScreen(modifier, viewModel, initialJournalEndpoint)
+        JournalScreen(modifier, viewModel, initialJournalEndpoint, quickAddRequest, onQuickAddCancel, onQuickAddSaveResult)
         return
     }
     if (section == 5) {
         ReportsScreen(modifier)
         return
     }
-    SectionContent(section, state, modifier, viewModel)
+    SectionContent(section, state, modifier, viewModel, quickAddRequest, onQuickAddCancel, onQuickAddSaveResult)
 }
 
 @Composable
-private fun SectionContent(section: Int, state: PatientSectionState, modifier: Modifier, viewModel: PatientSectionViewModel) {
+private fun SectionContent(
+    section: Int,
+    state: PatientSectionState,
+    modifier: Modifier,
+    viewModel: PatientSectionViewModel,
+    quickAddRequest: DashboardQuickAddRequest?,
+    onQuickAddCancel: () -> Unit,
+    onQuickAddSaveResult: (Boolean) -> Unit,
+) {
     val endpoint = when (section) { 1 -> "profile"; 2 -> "glucose"; else -> "medications" }
     val title = when (section) { 1 -> "ملفي الصحي"; 2 -> "قياسات السكر"; else -> "أدويتي" }
-    var adding by remember(endpoint) { mutableStateOf(false) }
+    val directCreate = quickAddRequest?.takeIf { it.action.section == section }
+    var adding by remember(endpoint, directCreate?.requestId) { mutableStateOf(directCreate != null) }
     var addingDose by remember(section) { mutableStateOf(false) }
     var editing by remember(endpoint) { mutableStateOf<Pair<String, JsonObject>?>(null) }
     var profileEditing by remember(section) { mutableStateOf(false) }
@@ -109,7 +121,7 @@ private fun SectionContent(section: Int, state: PatientSectionState, modifier: M
         state.notice?.let { Text(it, Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.primary, textAlign = TextAlign.Start) }
         if (state.loading) CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally))
         else if (section == 1) {
-            if (profileEditing) ProfileEditor(state.data, state.busy, viewModel::save)
+            if (profileEditing) ProfileEditor(state.data, state.busy) { endpoint, body -> viewModel.save(endpoint, body) }
             else {
                 Button(onClick = { profileEditing = true }, modifier = Modifier.fillMaxWidth()) { Text("تعديل الملف الصحي") }
                 ProfileContent(
@@ -118,19 +130,31 @@ private fun SectionContent(section: Int, state: PatientSectionState, modifier: M
                     state.profileHistoryLoading,
                     state.busy,
                     viewModel::reload,
-                    viewModel::save,
+                    { endpoint, body -> viewModel.save(endpoint, body) },
                     viewModel::loadMoreProfileHistory,
                 )
             }
         }
         else {
             if (section == 2) Text("سجّل قراءاتك كما ظهرت على الجهاز. لا يقدم التطبيق تفسيرًا طبيًا للقراءات.", Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Start)
-            Button(onClick = { adding = !adding }, modifier = Modifier.fillMaxWidth()) { Text(if (adding) "إلغاء" else if (section == 2) "إضافة قياس" else "إضافة دواء") }
-            if (adding) RecordForm(endpoint, state.busy, timeZoneId = state.patientTimezone) { body -> viewModel.save(endpoint, body); adding = false }
-            editing?.let { (id, record) -> RecordForm(endpoint, state.busy, record, state.patientTimezone) { body -> viewModel.save(endpoint, body, id); editing = null } }
-            RecordList(endpoint, state.data, onDelete = viewModel::delete, onEdit = { id, record -> editing = id to record }, timeZoneId = state.patientTimezone, numeralSystem = state.numeralSystem)
-            PaginationAction(state.data, state.busy, viewModel::loadMore)
-            if (section == 3) {
+            Button(onClick = { if (directCreate != null) onQuickAddCancel() else adding = !adding }, modifier = Modifier.fillMaxWidth()) { Text(if (adding) "إلغاء" else if (section == 2) "إضافة قياس" else "إضافة دواء") }
+            if (adding && directCreate?.action?.form == DashboardQuickAddForm.MedicationAdministration) {
+                AdministrationForm(state.data, state.busy) { body ->
+                    viewModel.save("administrations", body, reloadAfterSave = false) { saved -> onQuickAddSaveResult(saved) }
+                }
+            } else if (adding) RecordForm(endpoint, state.busy, timeZoneId = state.patientTimezone, formKey = directCreate?.requestId) { body ->
+                viewModel.save(endpoint, body, reloadAfterSave = directCreate == null) { saved ->
+                    if (directCreate != null) onQuickAddSaveResult(saved) else if (saved) adding = false
+                }
+            }
+            if (directCreate == null) editing?.let { (id, record) -> RecordForm(endpoint, state.busy, record, state.patientTimezone) { body ->
+                viewModel.save(endpoint, body, id) { saved -> if (saved) editing = null }
+            } }
+            if (directCreate == null) {
+                RecordList(endpoint, state.data, onDelete = viewModel::delete, onEdit = { id, record -> editing = id to record }, timeZoneId = state.patientTimezone, numeralSystem = state.numeralSystem)
+                PaginationAction(state.data, state.busy, viewModel::loadMore)
+            }
+            if (section == 3 && directCreate == null) {
                 Text("تسجيل الدواء لا يغيّر الجرعة الموصوفة. سجّل الجرعة الفعلية التي تناولتها فقط.", Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Start)
                 Text("سجل الجرعات", Modifier.fillMaxWidth(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, textAlign = TextAlign.Start)
                 Button(onClick = { addingDose = !addingDose }, modifier = Modifier.fillMaxWidth()) { Text(if (addingDose) "إلغاء" else "تسجيل جرعة") }
@@ -144,24 +168,38 @@ private fun SectionContent(section: Int, state: PatientSectionState, modifier: M
 }
 
 @Composable
-private fun JournalScreen(modifier: Modifier, viewModel: PatientSectionViewModel, initialEndpoint: String) {
-    var endpoint by remember(initialEndpoint) { mutableStateOf(initialEndpoint) }
+private fun JournalScreen(
+    modifier: Modifier,
+    viewModel: PatientSectionViewModel,
+    initialEndpoint: String,
+    quickAddRequest: DashboardQuickAddRequest?,
+    onQuickAddCancel: () -> Unit,
+    onQuickAddSaveResult: (Boolean) -> Unit,
+) {
+    val directCreate = quickAddRequest?.takeIf { it.action.section == 4 && it.action.endpoint == initialEndpoint }
+    var endpoint by remember(initialEndpoint, directCreate?.requestId) { mutableStateOf(initialEndpoint) }
     val state by viewModel.state.collectAsState()
-    var adding by remember(endpoint) { mutableStateOf(false) }
+    var adding by remember(endpoint, directCreate?.requestId) { mutableStateOf(directCreate != null) }
     LaunchedEffect(endpoint) { viewModel.load(endpoint) }
     val choices = listOf("meals" to "الوجبات", "activities" to "النشاط", "sleep" to "النوم", "symptoms" to "الأعراض", "factors" to "العوامل اليومية", "weight" to "الوزن", "labs" to "التحاليل")
     Column(modifier.verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         SahatiPageTitle("يومياتي")
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (directCreate == null) Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             choices.forEach { (key, title) -> FilterChip(selected = endpoint == key, onClick = { endpoint = key }, label = { Text(title) }) }
         }
         state.error?.let { Text(it, Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Start) }
         if (state.loading) CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally))
         else {
-            Button(onClick = { adding = !adding }, modifier = Modifier.fillMaxWidth()) { Text(if (adding) "إلغاء" else "إضافة سجل") }
-            if (adding) RecordForm(endpoint, state.busy, timeZoneId = state.patientTimezone) { body -> viewModel.save(endpoint, body); adding = false }
-            RecordList(endpoint, state.data, onDelete = viewModel::delete, timeZoneId = state.patientTimezone, numeralSystem = state.numeralSystem, patientHeightCm = state.patientHeightCm)
-            PaginationAction(state.data, state.busy, viewModel::loadMore)
+            Button(onClick = { if (directCreate != null) onQuickAddCancel() else adding = !adding }, modifier = Modifier.fillMaxWidth()) { Text(if (adding) "إلغاء" else "إضافة سجل") }
+            if (adding) RecordForm(endpoint, state.busy, timeZoneId = state.patientTimezone, formKey = directCreate?.requestId) { body ->
+                viewModel.save(endpoint, body, reloadAfterSave = directCreate == null) { saved ->
+                    if (directCreate != null) onQuickAddSaveResult(saved) else if (saved) adding = false
+                }
+            }
+            if (directCreate == null) {
+                RecordList(endpoint, state.data, onDelete = viewModel::delete, timeZoneId = state.patientTimezone, numeralSystem = state.numeralSystem, patientHeightCm = state.patientHeightCm)
+                PaginationAction(state.data, state.busy, viewModel::loadMore)
+            }
             OutlinedButton(onClick = viewModel::reload, modifier = Modifier.fillMaxWidth()) { Text("تحديث") }
         }
     }
@@ -394,9 +432,9 @@ private fun RecordList(
 }
 
 @Composable
-private fun RecordForm(endpoint: String, busy: Boolean, initial: JsonObject? = null, timeZoneId: String? = null, onSave: (JsonObject) -> Unit) {
+private fun RecordForm(endpoint: String, busy: Boolean, initial: JsonObject? = null, timeZoneId: String? = null, formKey: Int? = null, onSave: (JsonObject) -> Unit) {
     val specs = fieldsFor(endpoint, timeZoneId)
-    val values = remember(endpoint, initial) { mutableStateMapOf<String, String>().apply { specs.forEach { spec ->
+    val values = remember(endpoint, initial, formKey) { mutableStateMapOf<String, String>().apply { specs.forEach { spec ->
         put(spec.key, recordFormInitialValue(spec.key, initial, spec.defaultValue, timeZoneId))
     } } }
     Card(Modifier.fillMaxWidth()) {

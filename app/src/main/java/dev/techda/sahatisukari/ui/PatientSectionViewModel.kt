@@ -49,6 +49,7 @@ private data class PatientSectionLoad(
 class PatientSectionViewModel @Inject constructor(private val api: PatientApi, private val json: Json) : ViewModel() {
     private val _state = MutableStateFlow(PatientSectionState())
     val state: StateFlow<PatientSectionState> = _state.asStateFlow()
+    private val saveGuard = DuplicateSubmissionGuard()
 
     fun load(endpoint: String) {
         if (_state.value.endpoint == endpoint && (_state.value.loading || _state.value.data != null)) return
@@ -199,8 +200,14 @@ class PatientSectionViewModel @Inject constructor(private val api: PatientApi, p
         }
     }
 
-    fun save(endpoint: String, body: JsonObject, id: String? = null) {
-        if (_state.value.busy) return
+    fun save(
+        endpoint: String,
+        body: JsonObject,
+        id: String? = null,
+        reloadAfterSave: Boolean = true,
+        onComplete: (Boolean) -> Unit = {},
+    ) {
+        if (_state.value.busy || !saveGuard.tryStart()) return
         _state.value = _state.value.copy(busy = true, error = null, notice = null)
         viewModelScope.launch {
             runCatching {
@@ -214,10 +221,16 @@ class PatientSectionViewModel @Inject constructor(private val api: PatientApi, p
                 if (!response.isSuccessful) fail(response.code(), response.errorBody()?.string())
             }.onSuccess {
                 _state.value = _state.value.copy(busy = false, notice = "تم الحفظ.")
-                reload()
+                saveGuard.finish()
+                if (reloadAfterSave) reload()
                 if (endpoint in setOf("weight", "labs")) loadProfileHistory(force = true)
+                onComplete(true)
             }
-                .onFailure { _state.value = _state.value.copy(busy = false, error = it.message ?: "تعذر حفظ البيانات.") }
+                .onFailure {
+                    _state.value = _state.value.copy(busy = false, error = it.message ?: "تعذر حفظ البيانات.")
+                    saveGuard.finish()
+                    onComplete(false)
+                }
         }
     }
 

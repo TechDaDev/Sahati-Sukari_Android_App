@@ -14,10 +14,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.DirectionsRun
 import androidx.compose.material.icons.outlined.Assessment
 import androidx.compose.material.icons.outlined.Bloodtype
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Medication
+import androidx.compose.material.icons.outlined.Restaurant
 import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Sos
@@ -32,7 +35,10 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -41,11 +47,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.mapSaver
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
@@ -57,7 +63,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.LayoutDirection
-import androidx.compose.ui.platform.LocalContext
+import androidx.activity.compose.BackHandler
 import androidx.hilt.navigation.compose.hiltViewModel
 import dev.techda.sahatisukari.data.AuthUser
 import dev.techda.sahatisukari.BuildConfig
@@ -143,10 +149,12 @@ fun SahatiRoot(authViewModel: AuthViewModel = hiltViewModel()) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun PatientApp(user: AuthUser, onLogout: () -> Unit, settingsViewModel: SettingsViewModel = hiltViewModel()) {
-    var selected by rememberSaveable { mutableIntStateOf(0) }
-    var journalEndpoint by rememberSaveable { mutableStateOf("meals") }
+    var navigation by rememberSaveable(stateSaver = dashboardQuickAddFlowSaver) { mutableStateOf(DashboardQuickAddFlow()) }
     var emergency by rememberSaveable { mutableStateOf(false) }
     var settings by rememberSaveable { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val quickAdd = navigation.request
+    BackHandler(enabled = quickAdd != null) { navigation = navigation.cancel() }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -157,31 +165,79 @@ private fun PatientApp(user: AuthUser, onLogout: () -> Unit, settingsViewModel: 
                     }
                 },
                 actions = {
-                    IconButton(onClick = { settings = true; emergency = false }) { Icon(Icons.Outlined.Settings, contentDescription = "الإعدادات", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
-                    IconButton(onClick = { emergency = true }) { Icon(Icons.Outlined.Sos, contentDescription = "مساعدة عاجلة", tint = MaterialTheme.colorScheme.error) }
-                    IconButton(onClick = onLogout) { Icon(Icons.AutoMirrored.Outlined.Logout, contentDescription = "خروج", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    IconButton(onClick = { settings = true; emergency = false; if (quickAdd != null) navigation = navigation.cancel() }) { Icon(Icons.Outlined.Settings, contentDescription = "الإعدادات", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    IconButton(onClick = { emergency = true; if (quickAdd != null) navigation = navigation.cancel() }) { Icon(Icons.Outlined.Sos, contentDescription = "مساعدة عاجلة", tint = MaterialTheme.colorScheme.error) }
+                    IconButton(onClick = { if (quickAdd != null) navigation = navigation.cancel(); onLogout() }) { Icon(Icons.AutoMirrored.Outlined.Logout, contentDescription = "خروج", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
             )
         },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         bottomBar = {
             SahatiBottomNavigation(
-                selectedIndex = if (emergency || settings) -1 else selected,
-                onSelect = { selected = it; if (it == 4) journalEndpoint = "meals"; emergency = false; settings = false },
+                selectedIndex = if (emergency || settings) -1 else navigation.section,
+                onSelect = { navigation = navigation.selectSection(it); emergency = false; settings = false },
             )
         },
         containerColor = MaterialTheme.colorScheme.background,
     ) { padding ->
         if (emergency) EmergencyHelp(Modifier.fillMaxSize().padding(padding))
         else if (settings) SettingsScreen(onBack = { settings = false }, onSignedOut = { settings = false; onLogout() }, modifier = Modifier.fillMaxSize().padding(padding), viewModel = settingsViewModel)
-        else if (selected == 0) DashboardScreen(user, Modifier.fillMaxSize().padding(padding), onGlucose = { selected = 2 }, onJournal = { journalEndpoint = "activities"; selected = 4 }, onReports = { selected = 5 }, onProfile = { selected = 1 })
-        else PatientSectionScreen(selected, Modifier.fillMaxSize().padding(padding), initialJournalEndpoint = journalEndpoint)
+        else if (navigation.section == 0) {
+            navigation.notice?.let { notice -> LaunchedEffect(notice) { snackbarHostState.showSnackbar(notice); navigation = navigation.copy(notice = null) } }
+            DashboardScreen(
+                user,
+                Modifier.fillMaxSize().padding(padding),
+                onGlucose = { navigation = navigation.selectSection(2) },
+                onJournal = { navigation = navigation.selectSection(4).copy(journalEndpoint = "activities") },
+                onReports = { navigation = navigation.selectSection(5) },
+                onProfile = { navigation = navigation.selectSection(1) },
+                onQuickAdd = { action -> navigation = navigation.open(action) },
+                refreshRequest = navigation.dashboardRefreshCount,
+            )
+        } else PatientSectionScreen(
+            navigation.section,
+            Modifier.fillMaxSize().padding(padding),
+            initialJournalEndpoint = navigation.journalEndpoint,
+            quickAddRequest = quickAdd,
+            onQuickAddCancel = { navigation = navigation.cancel() },
+            onQuickAddSaveResult = { succeeded ->
+                navigation = navigation.completeSave(succeeded)
+            },
+        )
     }
 }
 
+private val dashboardQuickAddFlowSaver = mapSaver(
+    save = { flow ->
+        mapOf(
+            "section" to flow.section,
+            "journalEndpoint" to flow.journalEndpoint,
+            "action" to flow.request?.action?.name,
+            "requestId" to flow.request?.requestId,
+            "refreshCount" to flow.dashboardRefreshCount,
+            "notice" to flow.notice,
+            "nextRequestId" to flow.nextRequestId,
+        )
+    },
+    restore = { saved ->
+        val action = (saved["action"] as? String)?.let { value -> DashboardQuickAdd.entries.firstOrNull { it.name == value } }
+        val requestId = saved["requestId"] as? Int
+        DashboardQuickAddFlow(
+            section = saved["section"] as? Int ?: 0,
+            journalEndpoint = saved["journalEndpoint"] as? String ?: "meals",
+            request = action?.let { selected -> DashboardQuickAddRequest(selected, requestId ?: 1) },
+            dashboardRefreshCount = saved["refreshCount"] as? Int ?: 0,
+            notice = saved["notice"] as? String,
+            nextRequestId = saved["nextRequestId"] as? Int ?: requestId ?: 0,
+        )
+    },
+)
+
 @Composable
-private fun DashboardScreen(user: AuthUser, modifier: Modifier = Modifier, onGlucose: () -> Unit, onJournal: () -> Unit, onReports: () -> Unit, onProfile: () -> Unit, viewModel: DashboardViewModel = hiltViewModel()) {
+private fun DashboardScreen(user: AuthUser, modifier: Modifier = Modifier, onGlucose: () -> Unit, onJournal: () -> Unit, onReports: () -> Unit, onProfile: () -> Unit, onQuickAdd: (DashboardQuickAdd) -> Unit, refreshRequest: Int, viewModel: DashboardViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsState()
+    LaunchedEffect(refreshRequest) { if (refreshRequest > 0) viewModel.refresh() }
     Column(modifier.verticalScroll(rememberScrollState()).padding(horizontal = SahatiUiTokens.screenHorizontal, vertical = SahatiUiTokens.screenVertical), verticalArrangement = Arrangement.spacedBy(SahatiUiTokens.sectionSpacing)) {
         Text("لوحة المتابعة الصحية", modifier = Modifier.fillMaxWidth(), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, textAlign = TextAlign.Start)
         val profile = (state as? DashboardState.Ready)?.data?.obj("profile")
@@ -208,6 +264,7 @@ private fun DashboardScreen(user: AuthUser, modifier: Modifier = Modifier, onGlu
                 onProfile = onProfile,
                 onGlucose = onGlucose,
                 onJournal = onJournal,
+                onQuickAdd = onQuickAdd,
             )
         }
         Text("هذه اللوحة تعرض السجلات التي أضفتها فقط. لا تقدم تشخيصًا أو توصية علاجية.", Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Start)
@@ -223,6 +280,7 @@ private fun DashboardContent(
     onProfile: () -> Unit,
     onGlucose: () -> Unit,
     onJournal: () -> Unit,
+    onQuickAdd: (DashboardQuickAdd) -> Unit,
 ) {
     val dash = response.obj("dashboard") ?: return
     val completion = dash.obj("completion")
@@ -247,6 +305,7 @@ private fun DashboardContent(
     DashboardLatestAdministrationCard(DashboardPresentation.latestAdministration(dash.obj("lastAdministration"), timeZoneId, numeralSystem))
     val activityMinutes = dash.string("activityMinutes") ?: "0"
     StatCard("نشاط اليوم", if ((activityMinutes.toIntOrNull() ?: 0) == 0) "—" else MedicalPresentation.formatActivityDuration(activityMinutes, numeralSystem), "${MedicalPresentation.localizedDigits((dash.array("todayActivities")?.size ?: 0).toString(), numeralSystem)} نشاط مسجّل", Icons.Outlined.CalendarMonth)
+    DashboardQuickAddCard(onQuickAdd)
     val trendPoints = DashboardPresentation.trendPoints(dash.array("trendData"))
     Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(SahatiUiTokens.cardRadius), elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)) {
         Column(Modifier.padding(SahatiUiTokens.cardPadding), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -290,6 +349,47 @@ private fun DashboardContent(
     }
     DashboardRecentGlucoseCard(DashboardPresentation.recentGlucose(dash.array("recentGlucose"), glucoseUnit, timeZoneId, numeralSystem), onGlucose)
     DashboardTodayActivitiesCard(DashboardPresentation.todayActivities(dash.array("todayActivities"), timeZoneId, numeralSystem), onJournal)
+}
+
+@Composable
+private fun DashboardQuickAddCard(onQuickAdd: (DashboardQuickAdd) -> Unit) {
+    CompositionLocalProvider(androidx.compose.ui.platform.LocalLayoutDirection provides LayoutDirection.Rtl) {
+        Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(SahatiUiTokens.cardRadius), elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)) {
+            Column(Modifier.padding(SahatiUiTokens.cardPadding), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("إضافة سريعة", modifier = Modifier.fillMaxWidth(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, textAlign = TextAlign.Start)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    dashboardQuickAddRows[0].forEach { action ->
+                        val (label, icon) = when (action) {
+                            DashboardQuickAdd.Glucose -> "إضافة قياس سكر" to Icons.Outlined.Bloodtype
+                            DashboardQuickAdd.Medication -> "تسجيل دواء" to Icons.Outlined.Medication
+                            else -> error("Unexpected first-row Quick Add action")
+                        }
+                        QuickAddButton(label, icon, Modifier.weight(1f), onClick = { onQuickAdd(action) })
+                    }
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    dashboardQuickAddRows[1].forEach { action ->
+                        val (label, icon) = when (action) {
+                            DashboardQuickAdd.Meal -> "تسجيل وجبة" to Icons.Outlined.Restaurant
+                            DashboardQuickAdd.Activity -> "تسجيل نشاط بدني" to Icons.AutoMirrored.Outlined.DirectionsRun
+                            else -> error("Unexpected second-row Quick Add action")
+                        }
+                        QuickAddButton(label, icon, Modifier.weight(1f), onClick = { onQuickAdd(action) })
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun QuickAddButton(label: String, icon: ImageVector, modifier: Modifier, onClick: () -> Unit) {
+    FilledTonalButton(onClick = onClick, modifier = modifier, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 12.dp)) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Icon(icon, contentDescription = null)
+            Text(label, textAlign = TextAlign.Center, style = MaterialTheme.typography.labelLarge)
+        }
+    }
 }
 
 @Composable
